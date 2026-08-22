@@ -224,7 +224,8 @@ class FormattingTags(object):
             {
                 'desc': translate('OpenLP.FormattingTags', 'Preview'),
                 'start tag': '{preview}',
-                'start html': '<span style="opacity: 0.6; font-size: 80%;">',
+                # Get the preview style from the settings and apply them to the preview tag
+                'start html': Registry().get('settings').value('songs/preview_style_html'),
                 'end tag': '{/preview}',
                 'end html': '</span>',
                 'protected': True,

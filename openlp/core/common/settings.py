@@ -464,14 +464,17 @@ class Settings(QtCore.QSettings):
         'songs/disable chords import': False,
         'songs/auto play audio': False,
         'songs/uppercase songs': False,
-        'songs/preview_enabled': False,       # Master switch for preview group box
-        'songs/preview_intro': True,         # Show intro strophes in preview by default
-        'songs/preview_verse': True,         # Show verses in preview
-        'songs/preview_chorus': True,        # Show chorus in preview
-        'songs/preview_bridge': True,        # Show bridge in preview
-        'songs/preview_pre_chorus': True,    # Show pre-chorus in preview
-        'songs/preview_ending': True,        # Show ending in preview
-        'songs/preview_other': True,         # Show "other" strophes in preview
+        'songs/preview_enabled': False,     # Master switch for preview group box
+        'songs/preview_intro': True,        # Show intro strophes in preview by default
+        'songs/preview_verse': True,        # Show verses in preview
+        'songs/preview_chorus': True,       # Show chorus in preview
+        'songs/preview_bridge': True,       # Show bridge in preview
+        'songs/preview_pre_chorus': True,   # Show pre-chorus in preview
+        'songs/preview_ending': True,       # Show ending in preview
+        'songs/preview_other': True,        # Show "other" strophes in preview
+        'songs/preview_opacity': 60,        # Set opacity for the preview line
+        'songs/preview_font_size': 80,      # Set font size for the preview line
+        'songs/preview_style_html': '<span style="opacity: 0.60; font-size: 80%;">',  # Style for preview function
         'songusage/status': PluginStatus.Inactive,
         'songusage/db type': 'sqlite',
         'songusage/db username': '',

@@ -102,6 +102,8 @@ def test_save_check_box_settings(form):
     form.on_preview_pre_chorus_check_box_changed(QtCore.Qt.CheckState.Checked)
     form.on_preview_ending_check_box_changed(QtCore.Qt.CheckState.Unchecked)
     form.on_preview_other_check_box_changed(QtCore.Qt.CheckState.Checked)
+    form.preview_opacity_spin_box.setValue(55)
+    form.preview_size_spin_box.setValue(85)
 
     # WHEN: Save is invoked
     form.save()
@@ -122,6 +124,9 @@ def test_save_check_box_settings(form):
     assert form.settings.value('songs/preview_pre_chorus') is True
     assert form.settings.value('songs/preview_ending') is False
     assert form.settings.value('songs/preview_other') is True
+    assert form.settings.value('songs/preview_opacity') == 55
+    assert form.settings.value('songs/preview_font_size') == 85
+    assert form.settings.value('songs/preview_style_html') == '<span style="opacity: 0.55; font-size: 85%;">'
 
 
 def test_english_notation_button(form):
@@ -170,7 +175,7 @@ def test_password_change(mocked_settings_set_val, mocked_question, form):
     form.save()
     # THEN: footer should not have been saved (one less call than the change test below)
     mocked_question.assert_called_once()
-    assert mocked_settings_set_val.call_count == 20
+    assert mocked_settings_set_val.call_count == 23
 
 
 @patch('openlp.plugins.songs.lib.songstab.QtWidgets.QMessageBox.question')
@@ -186,7 +191,7 @@ def test_password_change_cancelled(mocked_settings_set_val, mocked_question, for
     form.save()
     # THEN: footer should not have been saved (one less call than the change test below)
     mocked_question.assert_called_once()
-    assert mocked_settings_set_val.call_count == 19
+    assert mocked_settings_set_val.call_count == 22
 
 
 @patch('openlp.core.common.settings.Settings.setValue')
@@ -198,7 +203,7 @@ def test_footer_nochange(mocked_settings_set_val, form):
     # WHEN: save is invoked
     form.save()
     # THEN: footer should not have been saved (one less call than the change test below)
-    assert mocked_settings_set_val.call_count == 20
+    assert mocked_settings_set_val.call_count == 23
 
 
 @patch('openlp.core.common.settings.Settings.setValue')
@@ -211,7 +216,7 @@ def test_footer_change(mocked_settings_set_val, form):
     # WHEN: save is invoked
     form.save()
     # THEN: footer should have been saved (one more call to setValue than the nochange test)
-    assert mocked_settings_set_val.call_count == 21
+    assert mocked_settings_set_val.call_count == 24
     assert form.footer_edit_box.toPlainText() == 'A new footer'
 
 
@@ -279,3 +284,19 @@ def test_save_first_slide_settings(form):
 
     # THEN: The correct values should be stored in the settings
     assert form.settings.value('songs/first slide mode') is SongFirstSlideMode.Footer.value
+
+
+def test_preview_settings_on_load(form):
+    """
+    Test that preview opacity and font size settings are correctly loaded into spin boxes
+    """
+    # GIVEN: custom settings in the database
+    form.settings.setValue('songs/preview_opacity', 40)
+    form.settings.setValue('songs/preview_font_size', 95)
+
+    # WHEN: Load is invoked
+    form.load()
+
+    # THEN: The spin boxes should match settings values
+    assert form.preview_opacity_spin_box.value() == 40
+    assert form.preview_size_spin_box.value() == 95
