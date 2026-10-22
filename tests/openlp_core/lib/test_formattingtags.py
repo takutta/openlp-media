@@ -91,3 +91,30 @@ def test_get_html_tags_with_user_tags(mock_settings):
 
         # THEN: The lists should now be identical.
         assert old_tags_list == FormattingTags.get_html_tags(), 'The lists should be identical.'
+
+
+def test_preview_tag_uses_style_html_from_settings(mock_settings):
+    """
+    Test that load_tags() uses 'songs/preview_style_html' directly
+    for the {preview} tag's start HTML.
+    """
+    with patch('openlp.core.lib.translate') as mocked_translate, \
+         patch('openlp.core.lib.formattingtags.json') as mocked_json:
+
+        # GIVEN: Our mocked modules and functions.
+        mocked_translate.side_effect = lambda module, text, *args, **kwargs: text
+        mocked_json.load.return_value = []
+
+        # GIVEN: Settings return the formatted style HTML string
+        expected_html = '<span style="opacity: 0.45; font-size: 75%;">'
+        mock_settings.value.side_effect = lambda key, default=None: (
+            expected_html if key == 'songs/preview_style_html' else default
+        )
+        # WHEN: Tags are loaded
+        FormattingTags.load_tags()
+        tags = FormattingTags.get_html_tags()
+        preview_tag = next(t for t in tags if t['start tag'] == '{preview}')
+
+        # THEN: The start html matches the mocked setting, and is protected
+        assert preview_tag['start html'] == expected_html
+        assert preview_tag['protected'] is True

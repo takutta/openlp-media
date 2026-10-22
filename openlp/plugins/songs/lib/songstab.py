@@ -25,6 +25,7 @@ from openlp.core.common.i18n import translate
 from openlp.core.common.enum import SongFirstSlideMode
 from openlp.core.lib.settingstab import SettingsTab
 from openlp.plugins.songs.lib.db import AuthorType
+from openlp.core.lib.formattingtags import FormattingTags
 
 
 class SongsTab(SettingsTab):
@@ -156,33 +157,70 @@ class SongsTab(SettingsTab):
         self.preview_layout.addWidget(self.preview_info_label)
 
         # Individual strophe type checkboxes for preview
+        # Grid layout for two-column checkbox alignment
+        self.preview_checkboxes_layout = QtWidgets.QGridLayout()
+        self.preview_checkboxes_layout.setObjectName('preview_checkboxes_layout')
+
         self.preview_intro_check_box = QtWidgets.QCheckBox(self.preview_group_box)
         self.preview_intro_check_box.setObjectName('preview_intro_check_box')
-        self.preview_layout.addWidget(self.preview_intro_check_box)
+        self.preview_checkboxes_layout.addWidget(self.preview_intro_check_box, 0, 0)
 
         self.preview_verse_check_box = QtWidgets.QCheckBox(self.preview_group_box)
         self.preview_verse_check_box.setObjectName('preview_verse_check_box')
-        self.preview_layout.addWidget(self.preview_verse_check_box)
+        self.preview_checkboxes_layout.addWidget(self.preview_verse_check_box, 1, 0)
 
         self.preview_chorus_check_box = QtWidgets.QCheckBox(self.preview_group_box)
         self.preview_chorus_check_box.setObjectName('preview_chorus_check_box')
-        self.preview_layout.addWidget(self.preview_chorus_check_box)
+        self.preview_checkboxes_layout.addWidget(self.preview_chorus_check_box, 2, 0)
 
         self.preview_bridge_check_box = QtWidgets.QCheckBox(self.preview_group_box)
         self.preview_bridge_check_box.setObjectName('preview_bridge_check_box')
-        self.preview_layout.addWidget(self.preview_bridge_check_box)
+        self.preview_checkboxes_layout.addWidget(self.preview_bridge_check_box, 3, 0)
 
         self.preview_pre_chorus_check_box = QtWidgets.QCheckBox(self.preview_group_box)
         self.preview_pre_chorus_check_box.setObjectName('preview_pre_chorus_check_box')
-        self.preview_layout.addWidget(self.preview_pre_chorus_check_box)
+        self.preview_checkboxes_layout.addWidget(self.preview_pre_chorus_check_box, 0, 1)
 
         self.preview_ending_check_box = QtWidgets.QCheckBox(self.preview_group_box)
         self.preview_ending_check_box.setObjectName('preview_ending_check_box')
-        self.preview_layout.addWidget(self.preview_ending_check_box)
+        self.preview_checkboxes_layout.addWidget(self.preview_ending_check_box, 1, 1)
 
         self.preview_other_check_box = QtWidgets.QCheckBox(self.preview_group_box)
         self.preview_other_check_box.setObjectName('preview_other_check_box')
-        self.preview_layout.addWidget(self.preview_other_check_box)
+        self.preview_checkboxes_layout.addWidget(self.preview_other_check_box, 2, 1)
+
+        # Add the grid layout into the main vertical layout
+        self.preview_layout.addLayout(self.preview_checkboxes_layout)
+
+        # Style text for preview line settings (opacity and size)
+        self.preview_style_label = QtWidgets.QLabel(self.preview_group_box)
+        self.preview_style_label.setObjectName('preview_style_label')
+        self.preview_layout.addWidget(self.preview_style_label)
+
+        # Horizontal layout for opacity and size settings
+        self.preview_style_layout = QtWidgets.QFormLayout()
+        self.preview_style_layout.setObjectName('preview_style_layout')
+
+        # Opacity setting of preview line
+        self.preview_opacity_label = QtWidgets.QLabel(self.preview_group_box)
+        self.preview_opacity_label.setObjectName('preview_opacity_label')
+        self.preview_opacity_spin_box = QtWidgets.QSpinBox(self.preview_group_box)
+        self.preview_opacity_spin_box.setObjectName('preview_opacity_spin_box')
+        self.preview_opacity_spin_box.setRange(0, 100)
+        self.preview_opacity_spin_box.setSuffix('%')
+        self.preview_style_layout.addRow(self.preview_opacity_label, self.preview_opacity_spin_box)
+
+        # Size setting  of preview line
+        self.preview_size_label = QtWidgets.QLabel(self.preview_group_box)
+        self.preview_size_label.setObjectName('preview_size_label')
+        self.preview_size_spin_box = QtWidgets.QSpinBox(self.preview_group_box)
+        self.preview_size_spin_box.setObjectName('preview_size_spin_box')
+        self.preview_size_spin_box.setRange(1, 100)
+        self.preview_size_spin_box.setSuffix('%')
+
+        self.preview_style_layout.addRow(self.preview_size_label, self.preview_size_spin_box)
+
+        self.preview_layout.addLayout(self.preview_style_layout)
 
         # Add group box to the left column
         self.left_layout.addWidget(self.preview_group_box)
@@ -245,6 +283,7 @@ class SongsTab(SettingsTab):
         self.footer_group_box.setTitle(translate('SongsPlugin.SongsTab', 'Footer'))
         # Preview first line feature
         self.preview_group_box.setTitle(translate('SongsPlugin.SongsTab', 'Preview'))
+        self.preview_style_label.setText(translate('SongsPlugin.SongsTab', 'Style:'))
         self.preview_info_label.setText(translate('SongsPlugin.SongsTab',
                                                   'Enable previewing the first line of the next section.'))
         self.preview_intro_check_box.setText(translate('SongsPlugin.SongsTab', 'Intro'))
@@ -254,6 +293,8 @@ class SongsTab(SettingsTab):
         self.preview_pre_chorus_check_box.setText(translate('SongsPlugin.SongsTab', 'Pre-Chorus'))
         self.preview_ending_check_box.setText(translate('SongsPlugin.SongsTab', 'Ending'))
         self.preview_other_check_box.setText(translate('SongsPlugin.SongsTab', 'Other'))
+        self.preview_opacity_label.setText(translate('SongsPlugin.SongsTab', 'Opacity:'))
+        self.preview_size_label.setText(translate('SongsPlugin.SongsTab', 'Size:'))
         # Keep this in sync with the list in mediaitem.py
         const = '<code>"{}"</code>'
         placeholders = [
@@ -426,6 +467,13 @@ class SongsTab(SettingsTab):
         self.preview_other = self.settings.value('songs/preview_other')
         self.preview_other_check_box.setChecked(self.preview_other)
 
+        # Load values for opacity and size settings of preview line
+        self.preview_opacity = self.settings.value('songs/preview_opacity')
+        self.preview_opacity_spin_box.setValue(int(self.preview_opacity))
+
+        self.preview_size = self.settings.value('songs/preview_font_size')
+        self.preview_size_spin_box.setValue(int(self.preview_size))
+
     def save(self):
         """
         Save the song settings
@@ -452,6 +500,20 @@ class SongsTab(SettingsTab):
         self.settings.setValue('songs/preview_pre_chorus', self.preview_pre_chorus)
         self.settings.setValue('songs/preview_ending', self.preview_ending)
         self.settings.setValue('songs/preview_other', self.preview_other)
+
+        # Opacity and size settings of preview line
+        self.settings.setValue('songs/preview_opacity', self.preview_opacity_spin_box.value())
+        self.settings.setValue('songs/preview_font_size', self.preview_size_spin_box.value())
+
+        # Build and save pre-formatted HTML tag
+        style_html = '<span style="opacity: {:.2f}; font-size: {}%;">'.format(
+            self.preview_opacity_spin_box.value() / 100.0,
+            self.preview_size_spin_box.value()
+        )
+        self.settings.setValue('songs/preview_style_html', style_html)
+
+        # Now reload the tag information
+        FormattingTags.load_tags()
 
         # Only save password if it's blank or the user acknowleges the warning
         if (self.ccli_password.text() == ''):
