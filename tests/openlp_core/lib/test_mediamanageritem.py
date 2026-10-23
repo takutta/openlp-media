@@ -33,7 +33,7 @@ def media_env():
     setup_patcher = patch('openlp.core.lib.mediamanageritem.MediaManagerItem._setup')
     setup_patcher.start()
     yield
-    setup_patcher.stop
+    setup_patcher.stop()
 
 
 @patch('openlp.core.lib.mediamanageritem.MediaManagerItem.on_preview_click')

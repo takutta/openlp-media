@@ -405,6 +405,7 @@ class Settings(QtCore.QSettings):
         'media/live audio out': '',
         'media/preview audio out': '',
         'players/background color': '#000000',
+        'media_folder/status': PluginStatus.Inactive,
         'obs_studio/status': PluginStatus.Inactive,
         'obs_studio/host': 'localhost',
         'obs_studio/port': 4455,

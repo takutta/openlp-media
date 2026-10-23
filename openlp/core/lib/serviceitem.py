@@ -193,7 +193,7 @@ class ServiceItem(RegistryProperties):
             self.icon = UiIcons().presentation
         elif self.name == 'images':
             self.icon = UiIcons().picture
-        elif self.name == 'media':
+        elif self.name in ('media', 'media_folder'):
             self.icon = UiIcons().video
         else:
             self.icon = UiIcons().custom

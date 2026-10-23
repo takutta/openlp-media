@@ -3408,12 +3408,12 @@ Varmista, että se on tallennettuna samaan kansioon kuin ”Songs.DB” tiedosto
     <message>
         <location filename="../../openlp/core/common/i18n.py" line="341"/>
         <source>Add folder</source>
-        <translation type="unfinished"/>
+        <translation>Lisää kansio</translation>
     </message>
     <message>
         <location filename="../../openlp/core/common/i18n.py" line="342"/>
         <source>Add folder.</source>
-        <translation type="unfinished"/>
+        <translation>Lisää kansio.</translation>
     </message>
     <message>
         <location filename="../../openlp/core/common/i18n.py" line="343"/>
@@ -6722,7 +6722,7 @@ OpenLP will attempt to continue.</source>
     <message>
         <location filename="../../openlp/core/ui/library.py" line="119"/>
         <source>You must select an item or folder to delete.</source>
-        <translation type="unfinished"/>
+        <translation>Valitse poistettava kohde tai kansio.</translation>
     </message>
     <message>
         <location filename="../../openlp/core/ui/library.py" line="138"/>
@@ -12745,6 +12745,155 @@ on vioittunut, ole hyvä ja yritä uudestaan.</translation>
         <location filename="../../openlp/plugins/songs/lib/importers/cclifile.py" line="90"/>
         <source>The file does not have a valid extension.</source>
         <translation>Tiedostolla ei ole kelvollista päätettä.</translation>
+    </message>
+</context>
+<context>
+    <name>OpenLP.FileSystemLibraryItem</name>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="127"/>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="436"/>
+        <source>Choose folder</source>
+        <translation>Valitse kansio</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="128"/>
+        <source>Choose the folder to show in the library.</source>
+        <translation>Valitse kansio, joka näytetään kirjastossa.</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="132"/>
+        <source>Refresh</source>
+        <translation>Päivitä</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="133"/>
+        <source>Reload the folder from disk.</source>
+        <translation>Lataa kansion sisältö uudelleen levyltä.</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="218"/>
+        <source>Show in file manager</source>
+        <translation>Näytä tiedostonhallinnassa</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="337"/>
+        <source>No folder chosen. Click &quot;Choose folder&quot; to start.</source>
+        <translation>Kansiota ei ole valittu. Aloita valitsemalla &quot;Valitse kansio&quot;.</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="448"/>
+        <source>No folder chosen</source>
+        <translation>Kansiota ei ole valittu</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="449"/>
+        <source>You need to choose a folder for the library first.</source>
+        <translation>Valitse ensin kirjaston kansio.</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="460"/>
+        <source>Folder name:</source>
+        <translation>Kansion nimi:</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="468"/>
+        <source>Could not add the new folder: {error}</source>
+        <translation>Uutta kansiota ei voitu lisätä: {error}</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="491"/>
+        <source>Some of the files are not supported and were ignored.</source>
+        <translation>Osa tiedostoista ei ole tuettuja, ja ne ohitettiin.</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="545"/>
+        <source>The following files were not added:
+{names}</source>
+        <translation>Seuraavia tiedostoja ei lisätty:
+{names}</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="566"/>
+        <source>&quot;{name}&quot; already exists in the target folder.</source>
+        <translation>&quot;{name}&quot; on jo olemassa kohdekansiossa.</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="589"/>
+        <source>Delete</source>
+        <translation>Poista</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="590"/>
+        <source>Are you sure you want to move the following to the trash?
+{names}</source>
+        <translation>Haluatko varmasti siirtää seuraavat roskakoriin?
+{names}</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/core/ui/filesystemlibrary.py" line="605"/>
+        <source>Could not delete the following:
+{names}</source>
+        <translation>Seuraavia ei voitu poistaa:
+{names}</translation>
+    </message>
+</context>
+<context>
+    <name>MediaFolderPlugin</name>
+    <message>
+        <location filename="../../openlp/plugins/media_folder/media_folder_plugin.py" line="65"/>
+        <source>&lt;strong&gt;Media Folder Plugin&lt;/strong&gt;&lt;br /&gt;The media folder plugin plays the audio and video files of a folder on disk. The folders and files on disk are the library, so no database is used.</source>
+        <translation>&lt;strong&gt;Mediakansio&lt;/strong&gt;&lt;br /&gt;Tämä moduuli toistaa levyllä olevan kansion ääni- ja videotiedostot. Kirjasto koostuu suoraan levyn kansioista ja tiedostoista, joten tietokantaa ei käytetä.</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/plugins/media_folder/media_folder_plugin.py" line="76"/>
+        <source>Media Folder</source>
+        <comment>name singular</comment>
+        <translation>Mediakansio</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/plugins/media_folder/media_folder_plugin.py" line="77"/>
+        <source>Media Folder</source>
+        <comment>name plural</comment>
+        <translation>Mediakansio</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/plugins/media_folder/media_folder_plugin.py" line="81"/>
+        <source>Media Folder</source>
+        <comment>container title</comment>
+        <translation>Mediakansio</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/plugins/media_folder/media_folder_plugin.py" line="85"/>
+        <source>Copy media files into the folder.</source>
+        <translation>Kopioi mediatiedostoja kansioon.</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/plugins/media_folder/media_folder_plugin.py" line="89"/>
+        <source>Move the selected media to the trash.</source>
+        <translation>Siirrä valittu media roskakoriin.</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/plugins/media_folder/media_folder_plugin.py" line="90"/>
+        <source>Preview the selected media.</source>
+        <translation>Esikatsele valittua mediaa.</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/plugins/media_folder/media_folder_plugin.py" line="91"/>
+        <source>Send the selected media live.</source>
+        <translation>Lähetä valittu media Esitykseen.</translation>
+    </message>
+    <message>
+        <location filename="../../openlp/plugins/media_folder/media_folder_plugin.py" line="92"/>
+        <source>Add the selected media to the service.</source>
+        <translation>Lisää valittu media Listaan.</translation>
+    </message>
+</context>
+<context>
+    <name>MediaFolderPlugin.MediaItem</name>
+    <message>
+        <location filename="../../openlp/plugins/media_folder/lib/mediaitem.py" line="63"/>
+        <source>Select Media</source>
+        <translation>Valitse media</translation>
     </message>
 </context>
 </TS>

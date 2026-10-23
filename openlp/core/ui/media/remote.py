@@ -38,7 +38,7 @@ v2_media = Blueprint('v2-media-controller', __name__)
 def media_play():
     log.debug('media_play')
     live = Registry().get('live_controller')
-    if live.service_item.name != 'media':
+    if live.service_item.name not in ('media', 'media_folder'):
         abort(400)
     status = live.mediacontroller_live_play.emit()
     log.debug(f'media_play return {status}')
@@ -52,7 +52,7 @@ def media_play():
 def media_pause():
     log.debug('media_pause')
     live = Registry().get('live_controller')
-    if live.service_item.name != 'media':
+    if live.service_item.name not in ('media', 'media_folder'):
         abort(400)
     status = live.mediacontroller_live_pause.emit()
     log.debug(f'media_pause return {status}')
@@ -66,7 +66,7 @@ def media_pause():
 def media_stop():
     log.debug('media_stop')
     live = Registry().get('live_controller')
-    if live.service_item.name != 'media':
+    if live.service_item.name not in ('media', 'media_folder'):
         abort(400)
     status = live.mediacontroller_live_stop.emit()
     log.debug(f'media_stop return {status}')
