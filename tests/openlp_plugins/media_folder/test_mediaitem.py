@@ -157,3 +157,9 @@ def test_on_add_click_adds_every_file_in_selected_folder(media_item, media_root)
     # THEN: Both files are added
     added = [call.args[0].data(0, QtCore.Qt.ItemDataRole.UserRole) for call in media_item.add_to_service.call_args_list]
     assert added == [media_root / 'Worship' / 'intro.mp4', media_root / 'Worship' / 'loop.MKV']
+
+
+def test_remote_signals_follow_plugin_name(media_item):
+    """The remote API finds the signals by the name of the plugin"""
+    assert hasattr(media_item, 'media_folder_go_live')
+    assert hasattr(media_item, 'media_folder_add_to_service')

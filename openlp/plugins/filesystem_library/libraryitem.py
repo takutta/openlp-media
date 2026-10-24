@@ -403,16 +403,32 @@ class FileSystemLibraryItem(MediaManagerItem):
                         file_paths.append(child.data(0, QtCore.Qt.ItemDataRole.UserRole))
         return file_paths
 
+    def folder_files(self, folder: Path) -> List[Path]:
+        """
+        Return the supported files directly inside a folder, in the same order as they are shown in the library
+
+        :param folder: The folder to list
+        """
+        try:
+            entries = list(os.scandir(folder))
+        except OSError:
+            return []
+        return [Path(entry.path) for entry in sorted(entries, key=lambda entry: get_natural_key(entry.name))
+                if entry.is_file() and not entry.name.startswith('.') and self.is_supported_file(Path(entry.path))]
+
     def create_item_from_id(self, item_id: Any) -> QtWidgets.QTreeWidgetItem:
         """
-        Create a tree item from a file path, used by the remote API
+        Create a tree item from a file path, used by the remote API. Paths outside the library folder are not accepted,
+        their items have no type and are ignored by :meth:`generate_slide_data`.
 
         :param item_id: The path of the file
         """
         path = Path(item_id)
         tree_item = QtWidgets.QTreeWidgetItem([path.name])
         tree_item.setData(0, QtCore.Qt.ItemDataRole.UserRole, path)
-        tree_item.setData(0, ItemTypeRole, ItemType.Folder if path.is_dir() else ItemType.File)
+        root_path = self.root_path
+        if root_path and path.resolve().is_relative_to(root_path.resolve()):
+            tree_item.setData(0, ItemTypeRole, ItemType.Folder if path.is_dir() else ItemType.File)
         return tree_item
 
     @QtCore.Slot(str, bool, result=list)

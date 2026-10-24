@@ -43,8 +43,9 @@ class MediaFolderMediaItem(FileSystemLibraryItem):
     """
     The media manager item for the Media Folder plugin. Lists the audio and video files of a folder on disk.
     """
-    media_go_live = QtCore.Signal(list)
-    media_add_to_service = QtCore.Signal(list)
+    # The remote API looks these up as <plugin name>_go_live and <plugin name>_add_to_service
+    media_folder_go_live = QtCore.Signal(list)
+    media_folder_add_to_service = QtCore.Signal(list)
     log.info('{name} MediaFolderMediaItem loaded'.format(name=__name__))
 
     def __init__(self, parent, plugin):
@@ -66,8 +67,8 @@ class MediaFolderMediaItem(FileSystemLibraryItem):
         """
         Do some additional setup.
         """
-        self.media_go_live.connect(self.go_live_remote)
-        self.media_add_to_service.connect(self.add_to_service_remote)
+        self.media_folder_go_live.connect(self.go_live_remote)
+        self.media_folder_add_to_service.connect(self.add_to_service_remote)
         self.single_service_item = False
         self.has_search = True
         Registry().register_function('mediaitem_media_rebuild', self.rebuild_players)

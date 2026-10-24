@@ -260,6 +260,20 @@ def test_create_item_from_id(library_item, root):
     assert tree_item.data(0, ItemTypeRole) == ItemType.File
 
 
+def test_create_item_from_id_outside_root(library_item, temp_folder):
+    """Paths outside the library folder get no item type, so they cannot be shown through the remote API"""
+    outside = Path(temp_folder) / 'outside.txt'
+    outside.write_text('x')
+    tree_item = library_item.create_item_from_id(str(outside))
+    assert tree_item.data(0, ItemTypeRole) is None
+
+
+def test_folder_files(library_item, root):
+    """folder_files() lists the supported files directly inside a folder in natural order"""
+    assert library_item.folder_files(root) == [root / 'song 2.txt', root / 'song 10.txt']
+    assert library_item.folder_files(root / 'missing') == []
+
+
 def test_directory_change_triggers_reload(library_item, root, qtbot):
     """Changes on disk are picked up automatically"""
     # WHEN: A file is created on disk
