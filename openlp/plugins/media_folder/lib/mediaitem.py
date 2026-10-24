@@ -21,7 +21,7 @@
 
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from PySide6 import QtCore, QtWidgets
 
@@ -129,16 +129,6 @@ class MediaFolderMediaItem(FileSystemLibraryItem):
         tree_item.setToolTip(0, str(file_path))
         return tree_item
 
-    def _get_tree_item(self, item) -> Optional[QtWidgets.QTreeWidgetItem]:
-        """
-        Turn whatever was passed to generate_slide_data into a tree item
-        """
-        if item is None:
-            return self.list_view.currentItem()
-        if isinstance(item, QtCore.QModelIndex):
-            return self.list_view.itemFromIndex(item)
-        return item
-
     def generate_slide_data(self, service_item, *, item=None, remote=False, context=ServiceItemContext.Service,
                             **kwargs):
         """
@@ -185,19 +175,6 @@ class MediaFolderMediaItem(FileSystemLibraryItem):
         """
         item.icon = UiIcons().video
         return item
-
-    def on_add_click(self):
-        """
-        Add the selected files to the service. Selected folders add the media files directly inside them.
-        """
-        if not self.list_view.selectedIndexes():
-            super().on_add_click()
-            return
-        drop_position = self.service_manager.get_drop_position()
-        for file_path in self.selected_file_paths():
-            self.add_to_service(self.create_item_from_id(file_path), position=drop_position)
-            if drop_position != -1:
-                drop_position += 1
 
     def get_list(self, media_type: MediaType = MediaType.Audio) -> List[Path]:
         """

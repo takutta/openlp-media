@@ -403,6 +403,29 @@ class FileSystemLibraryItem(MediaManagerItem):
                         file_paths.append(child.data(0, QtCore.Qt.ItemDataRole.UserRole))
         return file_paths
 
+    def _get_tree_item(self, item) -> Optional[QtWidgets.QTreeWidgetItem]:
+        """
+        Turn whatever was passed to generate_slide_data into a tree item
+        """
+        if item is None:
+            return self.list_view.currentItem()
+        if isinstance(item, QtCore.QModelIndex):
+            return self.list_view.itemFromIndex(item)
+        return item
+
+    def on_add_click(self):
+        """
+        Add the selected files to the service. Selected folders add the files directly inside them.
+        """
+        if not self.list_view.selectedIndexes():
+            super().on_add_click()
+            return
+        drop_position = self.service_manager.get_drop_position()
+        for file_path in self.selected_file_paths():
+            self.add_to_service(self.create_item_from_id(file_path), position=drop_position)
+            if drop_position != -1:
+                drop_position += 1
+
     def create_item_from_id(self, item_id: Any) -> QtWidgets.QTreeWidgetItem:
         """
         Create a tree item from a file path, used by the remote API
