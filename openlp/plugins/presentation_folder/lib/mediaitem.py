@@ -24,7 +24,7 @@ The media manager item of the Presentation Folder plugin
 import logging
 import os
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -214,16 +214,6 @@ class PresentationFolderMediaItem(FileSystemLibraryItem):
         """
         self._icons.pop(file_path, None)
         self.clean_up_thumbnails(file_path)
-
-    def _get_tree_item(self, item) -> Optional[QtWidgets.QTreeWidgetItem]:
-        """
-        Turn whatever was passed to generate_slide_data into a tree item
-        """
-        if item is None:
-            return self.list_view.currentItem()
-        if isinstance(item, QtCore.QModelIndex):
-            return self.list_view.itemFromIndex(item)
-        return item
 
     def _show_error(self, remote: bool, message: str, file_path: Path):
         if not remote:

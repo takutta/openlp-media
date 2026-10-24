@@ -21,7 +21,7 @@
 
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from PySide6 import QtCore, QtWidgets
 
@@ -129,16 +129,6 @@ class MediaFolderMediaItem(FileSystemLibraryItem):
             tree_item.setIcon(0, UiIcons().video)
         tree_item.setToolTip(0, str(file_path))
         return tree_item
-
-    def _get_tree_item(self, item) -> Optional[QtWidgets.QTreeWidgetItem]:
-        """
-        Turn whatever was passed to generate_slide_data into a tree item
-        """
-        if item is None:
-            return self.list_view.currentItem()
-        if isinstance(item, QtCore.QModelIndex):
-            return self.list_view.itemFromIndex(item)
-        return item
 
     def generate_slide_data(self, service_item, *, item=None, remote=False, context=ServiceItemContext.Service,
                             **kwargs):

@@ -20,9 +20,9 @@ suoraa tiedostopolkua tietokannan sijaan: valittu kansio levyllä *on* kirjasto.
 | `media_folder` (Mediakansio) | Valmis ja testattu, käynnistyy oikeassa sovelluksessa (smoke-testi) |
 | `image_folder` (Kuvakansio) | Valmis ja testattu, smoke-testi ok |
 | `presentation_folder` (Presentaatiokansio) | Valmis ja testattu PDF:llä. LibreOffice/PowerPoint vain mock-testeillä |
-| laulut | Ei aloitettu |
+| `song_folder` (Laulukansio) | Toimii ja testattu, kokeiltu oikeassa GUI:ssa (Xvfb). Ei muokkausnäkymää |
 
-Smoke-testi ajettiin offscreen-tilassa (ei oikeaa näyttöä). Kaikki kolme pitää vielä kokeilla oikeassa GUI:ssa.
+Smoke-testi ajettiin offscreen-tilassa (ei oikeaa näyttöä). Kaikki pitää vielä kokeilla oikeassa GUI:ssa.
 
 ## Mitä on tehty
 
@@ -59,6 +59,8 @@ piilotetut ohitetaan). Kuva- ja lauluplugin voivat käyttää samaa luokkaa.
   voi näyttää muita levyn tiedostoja.
 - Remote-API hakee signaalit nimillä `<pluginin nimi>_go_live` ja `<pluginin nimi>_add_to_service`. Ne pitää
   määritellä aliluokassa juuri näillä nimillä (esim. `image_folder_go_live`), muuten remote-komennot kaatuvat.
+- `_get_tree_item(item)` muuntaa `generate_slide_data()`:lle annetun arvon (None / `QModelIndex` / item) puun
+  itemiksi.
 - Luokka rekisteröi itse oletusasetukset (`root folder`, `last directory` ja listanäkymän pikanäppäimet
   `shortcuts/listView<Name>…`). Muuten `create_widget_action` kaatuu KeyErroriin.
 
@@ -110,10 +112,52 @@ piilotetut ohitetaan). Kuva- ja lauluplugin voivat käyttää samaa luokkaa.
   välimuistissa tiedoston muokkausajan mukaan.
 - Vanha ja uusi esitysplugin eivät saa olla päällä yhtä aikaa: kumpikin käynnistää omat ohjainprosessinsa.
 
+### Song Folder -plugin: `openlp/plugins/song_folder/`
+
+Laulut ovat OpenLyrics-tiedostoja (`*.xml`, kirjainkoosta riippumatta) kansiossa. Totuus on aina tiedostoissa,
+tietokantaa ei ole.
+
+- `lib/songfile.py`: tietokannaton jäsennin. `parse_song_file()` / `parse_song_xml()` palauttaa `FileSong`-olion
+  (nimet, tekijät tyyppeineen, copyright, CCLI, kommentit, laulukirjat, aiheet, säejärjestys, säkeet).
+  Virheellinen tiedosto nostaa `SongFileError`in.
+  - Rivien käsittely (sointumerkit, muotoilutagit, `<br/>`) käyttää songs-pluginin `OpenLyrics`-luokan
+    apumetodeja (`_process_lines_mixed_content`, `_process_formatting_tags`), joten tulos on sama kuin
+    songs-pluginissa. `OpenLyrics(None)` luodaan laiskasti, koska sen konstruktori lukee asetuksia.
+  - Kaksi poikkeamaa songs-pluginista: XML:n sisennykset ja rivinvaihdot poistetaan (OpenLyricsissä rivinvaihto on
+    vain `<br/>`), ja sivunvaihdon `<p style="page-break-after…"/>` jälkeinen teksti säilyy (songs-plugin
+    hukkaa sen).
+  - Tuntemattomat muotoilutagit lisätään väliaikaisina (`temporary=True`), asetuksia ei muuteta.
+  - Jäsennin ei lataa ulkoisia entiteettejä eikä verkkoa (`resolve_entities=False`, `no_network=True`).
+  - `ordered_verses()`: säejärjestyksen merkintä osuu koko nimeen (`v1a`), tagiin ja numeroon (`v1`, kaikki osat)
+    tai pelkkään tagiin (`c`). Ilman säejärjestystä säkeet näytetään tiedoston järjestyksessä.
+- `lib/songindex.py`: `SongIndex` on hakuindeksi muistissa. Tiedosto jäsennetään uudelleen vain, kun sen
+  `st_mtime_ns` tai koko muuttuu. `update(polut)` synkronoi indeksin puun tiedostoihin (kutsutaan jokaisen
+  `reload()`in jälkeen). `search(teksti)` vaatii kaikki sanat mistä tahansa kentästä tai tiedostonimestä
+  (normalisoitu: pienet kirjaimet, ei välimerkkejä, sointuja eikä muotoilutageja). Indeksiä ei tallenneta
+  levylle. Jos käynnistys on isolla kirjastolla hidas, sen voi myöhemmin välimuistittaa pluginin datakansioon.
+- `lib/mediaitem.py`: `SongFolderMediaItem(FileSystemLibraryItem)`.
+  - Puussa näkyy laulun nimi, ja tooltipissä on vaihtoehtoinen nimi, tekijät ja polku. Tiedosto, jota ei voi lukea,
+    näkyy tiedostonimellä ja virhekuvakkeella, ja virhe on tooltipissä.
+  - Hakukenttä listan yläpuolella suodattaa puuta kirjoitettaessa. Kansiot, joissa ei ole osumia, piilotetaan, ja
+    osumia sisältävät kansiot avataan. Suodatus säilyy, kun puu ladataan uudelleen.
+  - `generate_slide_data()`: säkeet säejärjestyksessä, pakotettu sivunvaihto (`[--}{--]`) jakaa slidet ja
+    valinnainen jako (`[---]`) toimii `CanSoftBreak`-ominaisuudella. Alatunniste tehdään songs-pluginin
+    `songs/footer template` -mallilla (sama ulkoasu kuin songs-pluginissa). `audit` asetetaan, joten
+    songusage-plugin kirjaa käytön. `data_string['file path']` kertoo lähdetiedoston.
+  - Remote-API:n haku (`search()`) käyttää indeksiä ja palauttaa tiedostopolun id:nä.
+- Plugin rekisteröi `song_folder/status`-oletusasetuksen ja songs-pluginin `song_footer`-oletuksen, joten
+  alatunniste toimii, vaikka songs-plugin olisi pois päältä.
+- Puuttuu vielä:
+  - Muokkausnäkymä. `editsongform.py` on tietokantasidonnainen, joten tarvitaan oma lomake, joka kirjoittaa
+    OpenLyrics-tiedoston (ehkä songs-pluginin `OpenLyrics.song_to_xml`-logiikalla ilman tietokantaa).
+  - Uusi laulu, taustamusiikki (`HasBackgroundAudio`), ensimmäisen sliden tila ja isot kirjaimet.
+  - Remote-API:n transponointi (`/api/v2/plugins/songs/transpose-live-item`) ei toimi, koska ydin tarkistaa
+    nimen (`name != 'songs'`). Sama tilanne kuin media_folderin play/pause-kutsuissa.
+
 ### Vanhat pluginit pitää säilyttää asennettuina
 
 Uudet pluginit eivät tarvitse vanhoja aktiivisiksi, mutta niiden pitää olla asennettuina:
-`presentation_folder` ja `image_folder` tuovat niistä koodia. Lisäksi ytimen `ServiceItem.validate_item()` ja
+`presentation_folder`, `image_folder` ja `song_folder` tuovat niistä koodia. Lisäksi ytimen `ServiceItem.validate_item()` ja
 slidecontroller tarkistavat State-nimen `media`, jonka vanha media-plugin rekisteröi myös pois päältä ollessaan.
 Ilman sitä `media_folder`-kohteet merkitään listassa virheellisiksi.
 
@@ -124,6 +168,9 @@ Ilman sitä `media_folder`-kohteet merkitään listassa virheellisiksi.
   tekstit (`OpenLP.Ui` "Add folder" jne.), joista osa puuttuu ytimen suomennoksesta.
 - `media_folder/i18n/fi.ts`: kontekstit `MediaFolderPlugin`, `MediaFolderPlugin.MediaItem` ja käytetyt
   `MediaPlugin.MediaItem`-tekstit.
+- `song_folder/i18n/fi.ts`: kontekstit `SongFolderPlugin`, `SongFolderPlugin.MediaItem` sekä alatunnisteen
+  `OpenLP.Ui`- ja `SongsPlugin.MediaItem`-tekstit. Tekijätyyppien nimet (`SongsPlugin.AuthorType`) tulevat ytimen
+  suomennoksesta.
 - `image_folder/i18n/fi.ts`: `ImageFolderPlugin`, käytetyt `ImagePlugin.MediaItem`-tekstit sekä käsin lisätty
   `ImagesPlugin.ImageTab`, joka puuttuu ytimen suomennoksesta.
 - `presentation_folder/i18n/fi.ts`: `PresentationFolderPlugin` ja käytetyt `PresentationPlugin.MediaItem`-tekstit.
@@ -148,13 +195,13 @@ uv run flake8 <tiedostot>      # rivin maksimipituus 120
 uv run python run_openlp.py
 ```
 
-- Testit: `tests/openlp_plugins/{filesystem_library,media_folder,image_folder,presentation_folder}/`.
+- Testit: `tests/openlp_plugins/{filesystem_library,media_folder,image_folder,presentation_folder,song_folder}/`.
   Esitystestit käyttävät oikeaa PDF-ohjainta (QtPdf) ja valeohjainta muille muodoille. Valeohjain ei saa periä
   `PresentationController`-luokkaa, koska pluginit etsivät ohjaimet `__subclasses__()`-kutsulla.
 - Smoke-testi oikealla sovelluksella: käynnistää OpenLP:n portable-tilassa kolmella pluginilla, lisää kuvia ja PDF:n
   Listaan ja Esitykseen, tallentaa ja avaa listan, sekä kokeilee remote-haun ja -liven. Tulostaa `SMOKE RESULT`:
   ```
-  QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--no-sandbox \
+  QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--no-sandbox \\
       uv run python tests/openlp_plugins/smoke_filesystem_plugins.py <tyhjä työkansio>
   ```
   Suomen tekstit tarkistetaan vain, jos `.qm`-tiedostot on käännetty. Valmiin ini-tiedoston pitää sisältää
@@ -162,6 +209,12 @@ uv run python run_openlp.py
 - Puhtaassa Linux-kontissa `uv sync` tarvitsee paketit `pkg-config libicu-dev libpq-dev` ja Qt/WebEngine
   `libegl1 libgl1 libxkbcommon0 libnss3 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libasound2t64
   libfontconfig1 libdbus-1-3 libxkbfile1`.
+- Laulun lukeminen voi lisätä globaaliin `FormattingTags.html_expands`-listaan väliaikaisia tageja, mikä rikkoo
+  songs-pluginin testin `test_process_formatting_tags`. `song_folder/conftest.py` palauttaa listan jokaisen
+  testin jälkeen.
+- GUI:n kokeilu ilman näyttöä: `xvfb-run -a uv run python run_openlp.py -p -P <kansio>`, ja rootina lisäksi
+  `QTWEBENGINE_DISABLE_SANDBOX=1`. Ensikäynnistyksen ohjattu toiminto ja versiovarmuuskopion kysely pitää ohittaa
+  asetuksilla tai skriptissä.
 - Testeissä oikeita widgettejä luotaessa `ActionList.shortcut_map` pitää tyhjentää testien välillä.
 - Upstreamin `tests/openlp_core/lib/test_mediamanageritem.py` jättää `MediaManagerItem._setup`-patchin voimaan
   (`setup_patcher.stop` ilman sulkuja). Pluginien testipakettien `conftest.py` kutsuu siksi `patch.stopall()`.
@@ -171,13 +224,9 @@ uv run python run_openlp.py
 
 ## Seuraavaksi
 
-Uudet pluginit tehdään samalla mallilla kuin `media_folder`: oletusasetukset, käännökset, kuvakkeet ja testit
-pluginin omassa hakemistossa, ei ytimessä.
+Uudet pluginit tehdään samalla mallilla kuin `media_folder` ja `song_folder`: oletusasetukset, käännökset,
+kuvakkeet ja testit pluginin omassa hakemistossa, ei ytimessä. Vanhojen pluginien koodia saa käyttää uudelleen
+importtaamalla, mutta niitä ei muokata.
 
-1. Kokeile `media_folder`, `image_folder` ja `presentation_folder` oikeassa GUI:ssa, esitykset myös LibreOfficella
-   ja PowerPointilla.
-2. Lauluplugin. Ehdotus: OpenLyrics-XML-tiedostot kansiossa. Nykyinen `OpenLyrics.xml_to_song` on sidottu
-   tietokantaan (`self.manager`), joten tarvitaan kevyt jäsennin, joka ei käytä tietokantaa. Muokkausnäkymä
-   (`editsongform.py`) on myös tietokantasidonnainen. Vanhan pluginin OpenLyrics-viennillä laulut saa tiedostoiksi.
-   Ytimen remote-API:n sävellajin vaihto toimii vain nimellä `songs`.
-3. Omat diat (`custom`) tarvittaessa, esim. tekstitiedostoina kansiossa.
+1. Kokeile kaikkia uusia plugineja oikeassa GUI:ssa, esitykset myös LibreOfficella ja PowerPointilla.
+2. Omat diat (`custom`) tarvittaessa, esim. tekstitiedostoina kansiossa.

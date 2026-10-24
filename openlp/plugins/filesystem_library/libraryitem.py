@@ -404,6 +404,16 @@ class FileSystemLibraryItem(MediaManagerItem):
                         file_paths.append(child.data(0, QtCore.Qt.ItemDataRole.UserRole))
         return file_paths
 
+    def _get_tree_item(self, item) -> Optional[QtWidgets.QTreeWidgetItem]:
+        """
+        Turn whatever was passed to generate_slide_data into a tree item
+        """
+        if item is None:
+            return self.list_view.currentItem()
+        if isinstance(item, QtCore.QModelIndex):
+            return self.list_view.itemFromIndex(item)
+        return item
+
     def folder_files(self, folder: Path) -> List[Path]:
         """
         Return the supported files directly inside a folder, in the same order as they are shown in the library
