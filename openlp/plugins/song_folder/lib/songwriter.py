@@ -33,7 +33,7 @@ from typing import Optional
 from lxml import etree
 
 from openlp.core.version import get_version
-from openlp.plugins.song_folder.lib.songfile import FileSong, SongFileError
+from openlp.plugins.song_folder.lib.songfile import OPENLP_NAMESPACE, THEME_TAG, FileSong, SongFileError
 from openlp.plugins.songs.lib.openlyricsxml import NAMESPACE, OpenLyrics
 
 
@@ -194,6 +194,9 @@ def song_to_xml(song: FileSong, original_xml: Optional[bytes] = None) -> bytes:
     else:
         for name in EDITED_PROPERTIES:
             _replace_property(properties, new_properties.find(_tag(name)), name)
+    # The theme comes after the lyrics, in the namespace of OpenLP
+    for old_theme in root.findall(THEME_TAG):
+        root.remove(old_theme)
     lyrics, format_element = _lyrics_elements(song)
     old_lyrics = root.find(_tag('lyrics'))
     if old_lyrics is not None:
@@ -214,6 +217,8 @@ def song_to_xml(song: FileSong, original_xml: Optional[bytes] = None) -> bytes:
                 for tag in format_element.find(_tag('tags')).findall(_tag('tag')):
                     if tag.get('name') not in known:
                         old_tags.append(tag)
+    if song.theme:
+        etree.SubElement(root, THEME_TAG, nsmap={'openlp': OPENLP_NAMESPACE}).text = song.theme
     # Indent the file, but not the lyrics: whitespace in <lines> is part of the text for other programs
     saved = [(node, node.text, node.tail) for lines in root.iter(_tag('lines')) for node in lines.iter()]
     etree.indent(root, space='  ')

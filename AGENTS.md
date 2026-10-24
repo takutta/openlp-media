@@ -20,7 +20,7 @@ suoraa tiedostopolkua tietokannan sijaan: valittu kansio levyllä *on* kirjasto.
 | `media_folder` (Mediakansio) | Valmis ja testattu, käynnistyy oikeassa sovelluksessa (smoke-testi) |
 | `image_folder` (Kuvakansio) | Valmis ja testattu, smoke-testi ok |
 | `presentation_folder` (Presentaatiokansio) | Valmis ja testattu PDF:llä. LibreOffice/PowerPoint vain mock-testeillä |
-| `song_folder` (Laulukansio) | Valmis ja testattu, muokkausnäkymä ja uusi laulu mukana. Smoke-testi ok |
+| `song_folder` (Laulukansio) | Valmis ja testattu: muokkaus, uusi laulu, songs-asetukset, taustamusiikki, teema, transponointi, indeksin välimuisti. Smoke-testi ok |
 
 Smoke-testi ajettiin offscreen-tilassa (ei oikeaa näyttöä). Kaikki pitää vielä kokeilla oikeassa GUI:ssa.
 
@@ -134,8 +134,13 @@ tietokantaa ei ole.
 - `lib/songindex.py`: `SongIndex` on hakuindeksi muistissa. Tiedosto jäsennetään uudelleen vain, kun sen
   `st_mtime_ns` tai koko muuttuu. `update(polut)` synkronoi indeksin puun tiedostoihin (kutsutaan jokaisen
   `reload()`in jälkeen). `search(teksti)` vaatii kaikki sanat mistä tahansa kentästä tai tiedostonimestä
-  (normalisoitu: pienet kirjaimet, ei välimerkkejä, sointuja eikä muotoilutageja). Indeksiä ei tallenneta
-  levylle. Jos käynnistys on isolla kirjastolla hidas, sen voi myöhemmin välimuistittaa pluginin datakansioon.
+  (normalisoitu: pienet kirjaimet, ei välimerkkejä, sointuja eikä muotoilutageja).
+  - Välimuisti: `load()`/`save()` lukevat ja kirjoittavat indeksin JSON-tiedostoon `<data>/song_folder/index.json`
+    (mediaitemin `initialise()` lataa, `reload()` tallentaa, jos `changed`). Rikkinäinen tai vanhan version
+    (`CACHE_VERSION`) välimuisti ohitetaan. Kasvata `CACHE_VERSION`ia, kun `FileSong` tai hakuteksti muuttuu.
+  - Indeksiä käytetään vain puun nimiin ja hakuun. `generate_slide_data()` jäsentää tiedoston aina uudelleen,
+    jotta slidet ovat ajan tasalla ja laulun omat muotoilutagit rekisteröityvät (välimuistista luettu laulu ei
+    rekisteröi niitä).
 - `lib/mediaitem.py`: `SongFolderMediaItem(FileSystemLibraryItem)`.
   - Puussa näkyy laulun nimi, ja tooltipissä on vaihtoehtoinen nimi, tekijät ja polku. Tiedosto, jota ei voi lukea,
     näkyy tiedostonimellä ja virhekuvakkeella, ja virhe on tooltipissä.
@@ -146,6 +151,17 @@ tietokantaa ei ole.
     `songs/footer template` -mallilla (sama ulkoasu kuin songs-pluginissa). `audit` asetetaan, joten
     songusage-plugin kirjaa käytön. `data_string['file path']` kertoo lähdetiedoston.
   - Remote-API:n haku (`search()`) käyttää indeksiä ja palauttaa tiedostopolun id:nä.
+  - songs-pluginin asetukset (`songs/*`) ovat yhteiset: isot kirjaimet (`{uc}`), ensimmäinen slide (laulukirjat
+    `O1` tai alatunniste `O2`) ja seuraavan rivin esikatselu (`{preview}`, säetyypeittäin `PREVIEW_SETTINGS`)
+    toimivat kuten songs-pluginissa. Plugin käyttää asetussivunaan songs-pluginin `SongsTab`-luokkaa. Jos
+    molemmat pluginit ovat päällä, sama asetussivu näkyy kahdesti. Sivulla on myös asetuksia, joilla ei ole
+    vaikutusta laulukansioon (SongSelect, "update service on edit", "add song from service").
+  - Taustamusiikki: laulun vieressä oleva samanniminen äänitiedosto (`Laulu.mp3` tiedostolle `Laulu.xml`,
+    `get_supported_media_suffix()`-äänipäätteet). Vaatii State-nimen `media`. `songs/auto play audio` toimii
+    ytimessä. Äänitiedosto ei siirry eikä poistu laulun mukana, kun laulua raahataan tai poistetaan kirjastossa.
+  - Teema: OpenLyricsissä ei ole teemaa, joten se on tiedostossa omassa nimiavaruudessaan
+    `<openlp:theme xmlns:openlp="http://openlp.org/ns/song-folder">Nimi</openlp:theme>` (`songfile.THEME_TAG`).
+    Muut ohjelmat ohittavat sen. Tyhjä teema = oletus.
 - Plugin rekisteröi `song_folder/status`-oletusasetuksen ja songs-pluginin `song_footer`-oletuksen, joten
   alatunniste toimii, vaikka songs-plugin olisi pois päältä.
 - `lib/songwriter.py`: `song_to_xml(laulu, alkuperäinen)` ja `write_song_file(laulu, polku, keep_contents)`
@@ -176,6 +192,8 @@ tietokantaa ei ole.
     teksti on säe 1. Samannimiset säkeet yhdistetään kuten luettaessa.
   - Säejärjestys näytetään käännetyillä tunnuksilla (`S1 K1`) ja luetaan sekä käännetyillä että englanninkielisillä.
   - Tekijät on listassa tyyppeineen. Aiheet ja laulukirjat (`Kirja #12`) kirjoitetaan yksi riville.
+  - Teema valitaan teemaluettelosta (`theme_manager.get_theme_names()`, päivittyy `theme_update_list`-
+    tapahtumasta). Transponointi ylös/alas (`transpose_lyrics`) näkyy, kun `songs/enable chords` on päällä.
   - Tekstit ovat songs-pluginin konteksteista (`SongsPlugin.EditSongForm` jne.), joten suurin osa suomennoksesta
     tulee ytimestä.
 - Muokkaus mediaitemissä:
@@ -191,10 +209,10 @@ tietokantaa ei ole.
     lomake avautuu uudelleen sisältö tallessa. Tallennuksen jälkeen indeksistä poistetaan tiedoston vanha tieto,
     koska koko ja aikaleima voivat olla samat.
 - Puuttuu vielä:
-  - Taustamusiikki (`HasBackgroundAudio`), ensimmäisen sliden tila ja isot kirjaimet. Taustamusiikin voisi ottaa
-    esim. laulun vieressä olevasta samannimisestä äänitiedostosta.
-  - Säkeen muokkaus erillisessä dialogissa (songs-pluginin `EditVerseForm`), teema laululle ja sointujen
-    transponointi lomakkeessa.
+  - Säkeen muokkaus erillisessä dialogissa (songs-pluginin `EditVerseForm`). Lomakkeen yksi tekstikenttä kattaa
+    saman, joten tätä ei ehkä tarvita.
+  - Taustamusiikin valinta lomakkeesta (nyt tiedosto pitää laittaa laulun viereen käsin) ja sen siirto/poisto
+    laulun mukana.
   - Remote-API:n transponointi (`/api/v2/plugins/songs/transpose-live-item`) ei toimi, koska ydin tarkistaa
     nimen (`name != 'songs'`). Sama tilanne kuin media_folderin play/pause-kutsuissa.
 
@@ -277,5 +295,9 @@ Uudet pluginit tehdään samalla mallilla kuin `media_folder` ja `song_folder`: 
 kuvakkeet ja testit pluginin omassa hakemistossa, ei ytimessä. Vanhojen pluginien koodia saa käyttää uudelleen
 importtaamalla, mutta niitä ei muokata.
 
-1. Kokeile kaikkia uusia plugineja oikeassa GUI:ssa, esitykset myös LibreOfficella ja PowerPointilla.
-2. Omat diat (`custom`) tarvittaessa, esim. tekstitiedostoina kansiossa.
+1. Kokeile kaikkia uusia plugineja oikeassa GUI:ssa, esitykset myös LibreOfficella ja PowerPointilla. Tätä ei voi
+   tehdä pilvikontissa.
+2. Laulukansion pienet puutteet (ks. "Puuttuu vielä" yllä).
+3. Omat diat (`custom`) tarvittaessa, esim. tekstitiedostoina kansiossa.
+4. Ytimen nimitarkistukset (media play/pause/stop, laulujen transponointi remote-API:ssa) voisi ehdottaa
+   upstreamiin. Ytimeen ei tehdä muutoksia tässä forkissa.

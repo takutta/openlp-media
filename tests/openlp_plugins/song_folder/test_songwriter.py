@@ -323,3 +323,15 @@ def test_new_file_permissions(settings, temp_folder):
     write_song_file(FileSong(titles=['Song'], verses=[SongVerse('v', text='Changed')]), file_path)
 
     assert stat.S_IMODE(file_path.stat().st_mode) == 0o640
+
+
+def test_theme_round_trip(settings):
+    """The theme is kept in an element of OpenLP's own namespace, and removed when it is cleared"""
+    song = FileSong(titles=['Song'], verses=[SongVerse('v', text='Line')], theme='Dark')
+
+    xml = song_to_xml(song)
+
+    assert b'<openlp:theme xmlns:openlp="http://openlp.org/ns/song-folder">Dark</openlp:theme>' in xml
+    assert parse_song_xml(xml) == song
+    song.theme = ''
+    assert b'theme>' not in song_to_xml(song, xml).replace(b'<themes>', b'')

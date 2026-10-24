@@ -174,3 +174,25 @@ def test_authors(form):
     form.authors_list_view.topLevelItem(0).setSelected(True)
     form.on_author_remove_button_clicked()
     assert form.get_song().authors == [('Joe', '')]
+
+
+def test_theme(form):
+    """The theme of the song is chosen from the themes of OpenLP"""
+    form.load_themes(['Light', 'Dark'])
+    form.load_song(FileSong(titles=['Song'], verses=[SongVerse('v', text='Line')], theme='Dark'))
+
+    assert form.theme_combo_box.currentText() == 'Dark'
+    form.theme_combo_box.setCurrentIndex(0)
+    assert form.get_song().theme == ''
+
+
+def test_transpose(form, settings):
+    """The chords of all the verses are transposed"""
+    settings.setValue('songs/warn about missing song key', False)
+    form.load_song(FileSong(titles=['Song'], verses=[SongVerse('v', text='[=C]Line [G]two'),
+                                                     SongVerse('c', text='[F]Chorus')]))
+
+    form.transpose(2)
+
+    assert text_to_lyrics(form.lyrics_edit.toPlainText()) == [SongVerse('v', text='[=D]Line [A]two'),
+                                                              SongVerse('c', text='[G]Chorus')]

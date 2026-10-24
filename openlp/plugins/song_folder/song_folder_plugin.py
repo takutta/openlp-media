@@ -34,6 +34,7 @@ from openlp.core.ui.icons import UiIcons
 
 from openlp.plugins.filesystem_library.translations import LIBRARY_TRANSLATIONS_PATH, install_translator
 from openlp.plugins.song_folder.lib.mediaitem import SongFolderMediaItem
+from openlp.plugins.songs.lib.songstab import SongsTab
 from openlp.plugins.songs.songsplugin import song_footer
 
 
@@ -52,7 +53,9 @@ class SongFolderPlugin(Plugin):
         Settings.extend_default_settings({'song_folder/status': PluginStatus.Inactive, **song_footer})
         install_translator(LIBRARY_TRANSLATIONS_PATH)
         install_translator(Path(__file__).parent / 'i18n')
-        super().__init__('song_folder', SongFolderMediaItem)
+        # The settings of the Songs plugin (upper case, first slide, chords, footer etc.) are shared, so its settings
+        # tab is used
+        super().__init__('song_folder', SongFolderMediaItem, SongsTab)
         self.weight = -9
         self.icon_path = UiIcons().music
         self.icon = build_icon(self.icon_path)

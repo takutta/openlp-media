@@ -21,17 +21,23 @@
 """
 A search index of the songs in the library. The index is only a cache in memory: the files are always the truth, and
 the index can be thrown away and built again at any time. A file is read again only when its modification time or size
-has changed.
+has changed. The index can be saved to a cache file, so that a big library starts quickly.
 """
+import json
 import logging
-from dataclasses import dataclass
+import os
+import tempfile
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-from openlp.plugins.song_folder.lib.songfile import FileSong, SongFileError, normalise, parse_song_file
+from openlp.plugins.song_folder.lib.songfile import FileSong, SongFileError, SongVerse, normalise, parse_song_file
 
 
 log = logging.getLogger(__name__)
+
+# Change this when FileSong or the search text changes, so that old caches are thrown away
+CACHE_VERSION = 1
 
 
 @dataclass
@@ -48,6 +54,8 @@ class SongIndex(object):
     """
     def __init__(self):
         self._entries: Dict[Path, _Entry] = {}
+        # Set when the entries change, so that the cache is only written when needed
+        self.changed = False
 
     def __len__(self) -> int:
         return len(self._entries)
@@ -76,6 +84,7 @@ class SongIndex(object):
                 log.warning('Could not read the song {path}: {error}'.format(path=file_path, error=error))
                 entry = _Entry(stamp, None, str(error), normalise(file_path.stem))
             self._entries[file_path] = entry
+            self.changed = True
         return entry
 
     def get(self, file_path: Path) -> Optional[FileSong]:
@@ -106,6 +115,7 @@ class SongIndex(object):
         for file_path in list(self._entries):
             if file_path not in file_paths:
                 del self._entries[file_path]
+                self.changed = True
         for file_path in file_paths:
             self._entry(file_path)
 
@@ -118,9 +128,64 @@ class SongIndex(object):
         for path in list(self._entries):
             if path == file_path or path.is_relative_to(file_path):
                 del self._entries[path]
+                self.changed = True
 
     def clear(self):
         self._entries.clear()
+        self.changed = True
+
+    def load(self, cache_path: Path):
+        """
+        Read the index from a cache file. Files that changed since are read again by :meth:`update`.
+        A missing or broken cache is ignored.
+
+        :param cache_path: The cache file
+        """
+        try:
+            data = json.loads(cache_path.read_text(encoding='utf-8'))
+            if data.get('version') != CACHE_VERSION:
+                return
+            entries = {}
+            for path, entry in data['entries'].items():
+                song = entry['song']
+                if song is not None:
+                    song = FileSong(**dict(song, authors=[tuple(author) for author in song['authors']],
+                                           songbooks=[tuple(book) for book in song['songbooks']],
+                                           verses=[SongVerse(**verse) for verse in song['verses']]))
+                entries[Path(path)] = _Entry(tuple(entry['stamp']), song, entry['error'], entry['search_text'])
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            log.info('Song index cache {path} not used: {error}'.format(path=cache_path, error=error))
+            return
+        self._entries = entries
+        self.changed = False
+
+    def save(self, cache_path: Path):
+        """
+        Write the index to a cache file, if it has changed
+
+        :param cache_path: The cache file
+        """
+        if not self.changed:
+            return
+        data = {'version': CACHE_VERSION,
+                'entries': {str(path): {'stamp': list(entry.stamp),
+                                        'song': asdict(entry.song) if entry.song else None,
+                                        'error': entry.error, 'search_text': entry.search_text}
+                            for path, entry in self._entries.items()}}
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            handle, temp_name = tempfile.mkstemp(dir=cache_path.parent, prefix='.', suffix='.tmp')
+            try:
+                with os.fdopen(handle, 'w', encoding='utf-8') as temp_file:
+                    json.dump(data, temp_file, ensure_ascii=False)
+                os.replace(temp_name, cache_path)
+            except BaseException:
+                Path(temp_name).unlink(missing_ok=True)
+                raise
+        except OSError as error:
+            log.warning('Could not save the song index cache {path}: {error}'.format(path=cache_path, error=error))
+            return
+        self.changed = False
 
     def search(self, text: str) -> List[Path]:
         """

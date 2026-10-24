@@ -30,6 +30,9 @@ from PySide6 import QtCore, QtWidgets
 from openlp.core.common.actions import ActionList
 from openlp.core.lib.serviceitem import ItemCapabilities, ServiceItem
 from openlp.plugins.song_folder.lib.mediaitem import SongFolderMediaItem
+from openlp.core.common.registry import Registry
+from openlp.core.state import State
+from openlp.plugins.song_folder.lib.songindex import SongIndex
 from openlp.plugins.song_folder.lib.songfile import FileSong, SongFileError, SongVerse, parse_song_file
 from openlp.plugins.songs.songsplugin import song_footer
 
@@ -62,7 +65,7 @@ def song_root(temp_folder):
 
 
 @pytest.fixture
-def media_item(registry, settings, state, song_root):
+def media_item(registry, settings, state, song_root, temp_folder):
     ActionList.shortcut_map = {}
     settings.extend_default_settings(song_footer)
     registry.register('main_window', MagicMock())
@@ -71,9 +74,11 @@ def media_item(registry, settings, state, song_root):
     plugin = MagicMock()
     plugin.name = 'song_folder'
     plugin.get_string.return_value = {'title': 'Song Folder', 'tooltip': 'Tooltip'}
-    item = SongFolderMediaItem(None, plugin)
-    item.initialise()
-    yield item
+    with patch('openlp.plugins.song_folder.lib.mediaitem.AppLocation.get_section_data_path',
+               return_value=Path(temp_folder) / 'data'):
+        item = SongFolderMediaItem(None, plugin)
+        item.initialise()
+        yield item
     item._reload_timer.stop()
     ActionList.shortcut_map = {}
 
@@ -402,3 +407,95 @@ def test_on_remote_edit_outside_library(media_item, temp_folder):
 
     assert media_item.on_remote_edit(str(outside)) is None
     form.exec.assert_not_called()
+
+
+def slide_texts(media_item, file_path):
+    service_item = ServiceItem(media_item.plugin)
+    media_item.generate_slide_data(service_item, item=find_item(media_item, file_path))
+    return service_item, [slide['text'] for slide in service_item.slides]
+
+
+def test_uppercase_songs(media_item, song_root, settings):
+    """The slides are in upper case when the Songs plugin is set so"""
+    settings.setValue('songs/uppercase songs', True)
+
+    _, texts = slide_texts(media_item, song_root / 'b-song.xml')
+
+    assert texts[0] == '{uc}Verse line{/uc}'
+
+
+@pytest.mark.parametrize('mode, text, verse', [(1, '\nBook #7\n\n', 'O1'), (2, None, 'O2')])
+def test_first_slide(media_item, song_root, settings, mode, text, verse):
+    """The first slide shows the songbooks or the footer, like in the Songs plugin"""
+    settings.setValue('songs/first slide mode', mode)
+
+    service_item, texts = slide_texts(media_item, song_root / 'b-song.xml')
+
+    assert service_item.slides[0]['verse'] == verse
+    if text:
+        assert texts[0] == text
+    else:
+        assert 'Beta' in texts[0]
+    assert texts[1] == 'Verse line'
+
+
+def test_preview_of_next_line(media_item, song_root, settings):
+    """The first line of the next slide is shown at the end of a slide"""
+    settings.setValue('songs/preview_enabled', True)
+    settings.setValue('songs/preview_chorus', False)
+
+    _, texts = slide_texts(media_item, song_root / 'b-song.xml')
+
+    # Verse 1 previews its next page and the following verse 1 page, the chorus is not previewed into or out of
+    assert texts[0] == 'Verse line\n{preview}Second page{/preview}'
+    assert texts[1] == 'Second page'
+    assert texts[2] == 'Hallelujah'
+
+
+def test_background_audio(media_item, song_root, state):
+    """An audio file with the same name as the song is played in the background"""
+    State().add_service('media', 0)
+    State().update_pre_conditions('media', True)
+    State().flush_preconditions()
+    Registry().register('media_controller', MagicMock(**{'media_length.return_value': 4321}))
+    (song_root / 'b-song.mp3').write_bytes(b'audio')
+    (song_root / 'b-song-other.mp3').write_bytes(b'audio')
+
+    with patch('openlp.plugins.song_folder.lib.mediaitem.get_supported_media_suffix',
+               return_value=(['*.mp3'], ['*.mp4'])):
+        service_item, _ = slide_texts(media_item, song_root / 'b-song.xml')
+
+    assert service_item.is_capable(ItemCapabilities.HasBackgroundAudio)
+    assert service_item.background_audio[0][0] == song_root / 'b-song.mp3'
+    assert service_item.media_length == 4321
+
+
+def test_no_background_audio(media_item, song_root):
+    """Without an audio file the song has no background audio"""
+    with patch('openlp.plugins.song_folder.lib.mediaitem.get_supported_media_suffix',
+               return_value=(['*.mp3'], ['*.mp4'])):
+        service_item, _ = slide_texts(media_item, song_root / 'b-song.xml')
+
+    assert not service_item.is_capable(ItemCapabilities.HasBackgroundAudio)
+
+
+def test_song_theme(media_item, song_root):
+    """The theme of the song is used for its slides"""
+    file_path = song_root / 'b-song.xml'
+    file_path.write_text(SONG.format(title='Beta', chorus='x').replace(
+        '</song>', '<theme xmlns="http://openlp.org/ns/song-folder">Dark</theme></song>'))
+
+    service_item, _ = slide_texts(media_item, file_path)
+
+    assert service_item.theme == 'Dark'
+
+
+def test_index_cache(media_item, song_root):
+    """The search index is saved to its cache and read back"""
+    assert media_item.index_cache_path.exists()
+    index = SongIndex()
+    index.load(media_item.index_cache_path)
+
+    assert index.get(song_root / 'b-song.xml').title == 'Beta'
+    assert index.error(song_root / 'Hymns' / 'broken.xml')
+    assert not index.changed

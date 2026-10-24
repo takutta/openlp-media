@@ -18,6 +18,7 @@
 # You should have received a copy of the GNU General Public License      #
 # along with this program.  If not, see <https://www.gnu.org/licenses/>. #
 ##########################################################################
+import glob
 import logging
 from collections import namedtuple
 from pathlib import Path
@@ -27,14 +28,20 @@ import mako.exceptions
 import mako.template
 from PySide6 import QtCore, QtWidgets
 
+from openlp.core.common import sha256_file_hash
+from openlp.core.common.applocation import AppLocation
+from openlp.core.common.enum import SongFirstSlideMode
 from openlp.core.common.i18n import UiStrings, translate
 from openlp.core.lib import ServiceItemContext, check_item_selected, create_separated_list
 from openlp.core.lib.serviceitem import ItemCapabilities
 from openlp.core.lib.ui import critical_error_message_box
+from openlp.core.state import State
 from openlp.core.ui.icons import UiIcons
+from openlp.core.ui.media import get_supported_media_suffix
 from openlp.plugins.filesystem_library.libraryitem import FileSystemLibraryItem, ItemType, ItemTypeRole
 from openlp.plugins.song_folder.forms.editsongform import SongFileEditForm
-from openlp.plugins.song_folder.lib.songfile import FORCED_SPLIT, FileSong, SongFileError, parse_song_xml
+from openlp.plugins.song_folder.lib.songfile import FORCED_SPLIT, FileSong, SongFileError, parse_song_file, \
+    parse_song_xml
 from openlp.plugins.song_folder.lib.songindex import SongIndex
 from openlp.plugins.song_folder.lib.songwriter import song_file_name, write_song_file
 from openlp.plugins.songs.lib import VerseType
@@ -43,6 +50,11 @@ from openlp.plugins.songs.lib.ui import SongStrings
 
 
 log = logging.getLogger(__name__)
+
+# The settings of the Songs plugin which show the first line of the next slide, by verse tag
+PREVIEW_SETTINGS = {'i': 'songs/preview_intro', 'v': 'songs/preview_verse', 'c': 'songs/preview_chorus',
+                    'b': 'songs/preview_bridge', 'p': 'songs/preview_pre_chorus', 'e': 'songs/preview_ending',
+                    'o': 'songs/preview_other'}
 
 Authors = namedtuple('Authors', ['words', 'music', 'words_music', 'translation', 'none', 'all'])
 
@@ -167,7 +179,22 @@ class SongFolderMediaItem(FileSystemLibraryItem):
         """
         super().reload(select_paths)
         self.index.update(self.get_file_list())
+        self.index.save(self.index_cache_path)
         self.filter_list(self.search_text_edit.displayText())
+
+    @property
+    def index_cache_path(self) -> Path:
+        """
+        The cache of the search index, in the data folder of the plugin
+        """
+        return AppLocation.get_section_data_path(self.settings_section) / 'index.json'
+
+    def initialise(self):
+        """
+        Read the search index from its cache before the library is loaded, so that only changed files are read
+        """
+        self.index.load(self.index_cache_path)
+        super().initialise()
 
     # Searching
 
@@ -249,13 +276,16 @@ class SongFolderMediaItem(FileSystemLibraryItem):
         if tree_item is None or tree_item.data(0, ItemTypeRole) != ItemType.File:
             return False
         file_path = tree_item.data(0, QtCore.Qt.ItemDataRole.UserRole)
-        song = self.index.get(file_path)
-        if song is None:
+        # The file is read again instead of taken from the index, so that the slides are always up to date and the
+        # formatting tags of the song are loaded
+        try:
+            song = parse_song_file(file_path)
+        except SongFileError as error:
             if not remote:
                 critical_error_message_box(
                     translate('SongFolderPlugin.MediaItem', 'Could not read the song'),
                     translate('SongFolderPlugin.MediaItem', 'The file {name} could not be read as an OpenLyrics '
-                              'song:\n{error}').format(name=file_path, error=self.index.error(file_path) or
+                              'song:\n{error}').format(name=file_path, error=error if file_path.exists() else
                                                        translate('SongFolderPlugin.MediaItem', 'File not found.')))
             return False
         service_item.title = song.title
@@ -265,12 +295,12 @@ class SongFolderMediaItem(FileSystemLibraryItem):
         service_item.add_capability(ItemCapabilities.CanEdit)
         service_item.add_capability(ItemCapabilities.OnLoadUpdate)
         service_item.edit_id = str(file_path)
-        for verse in song.ordered_verses():
-            verse_def = '{tag}{number}'.format(tag=VerseType.translated_tag(verse.tag), number=verse.number)
-            for page in FORCED_SPLIT.split(verse.text):
-                service_item.add_from_text(page, verse_def)
+        if song.theme:
+            service_item.theme = song.theme
         authors = get_authors(song)
-        self.generate_footer(service_item, song, authors)
+        footer_vars = self.generate_footer(service_item, song, authors)
+        self.generate_first_slide(service_item, song, footer_vars)
+        self.generate_verses(service_item, song)
         service_item.data_string = {
             'title': song.title,
             'alternate_title': song.alternate_title,
@@ -279,9 +309,87 @@ class SongFolderMediaItem(FileSystemLibraryItem):
             'copyright': song.copyright,
             'file path': str(file_path)
         }
+        self.add_background_audio(service_item, file_path)
         # The core only knows the icons of its own plugins
         service_item.icon = UiIcons().music
         return True
+
+    def generate_verses(self, service_item, song: FileSong):
+        """
+        Add the verses in the verse order. Like the Songs plugin, the slides can be in upper case, and the first line
+        of the next slide can be shown at the end of a slide.
+
+        :param service_item: The service item to be amended
+        :param song: The song
+        """
+        uppercase = bool(self.settings.value('songs/uppercase songs'))
+        preview_types = set()
+        if self.settings.value('songs/preview_enabled'):
+            preview_types = {tag for tag, setting in PREVIEW_SETTINGS.items() if self.settings.value(setting)}
+        pages = []
+        for verse in song.ordered_verses():
+            verse_def = '{tag}{number}'.format(tag=VerseType.translated_tag(verse.tag), number=verse.number)
+            pages.extend((verse, verse_def, page) for page in FORCED_SPLIT.split(verse.text))
+        for index, (verse, verse_def, page) in enumerate(pages):
+            if verse.tag in preview_types and index + 1 < len(pages):
+                next_verse, _, next_page = pages[index + 1]
+                next_lines = next_page.strip('\n').splitlines()
+                # The next verse is previewed only if its type is previewed too
+                if next_lines and (next_verse is verse or next_verse.tag in preview_types):
+                    page = page.rstrip() + '\n{preview}' + next_lines[0] + '{/preview}'
+            if uppercase:
+                page = '{uc}' + page + '{/uc}'
+            service_item.add_from_text(page, verse_def)
+
+    def generate_first_slide(self, service_item, song: FileSong, footer_vars: dict):
+        """
+        Add the first slide which the Songs plugin can show before the lyrics: the songbooks, or the footer
+
+        :param service_item: The service item to be amended
+        :param song: The song
+        :param footer_vars: The variables of the footer template
+        """
+        mode = self.settings.value('songs/first slide mode')
+        metadata = {'songs_first_slide_type': mode}
+        if mode == SongFirstSlideMode.Songbook and song.songbooks:
+            first_slide = '\n' + ''.join('{entry}\n\n'.format(entry=entry) for entry in song.songbook_entries)
+            service_item.add_from_text(first_slide, 'O1', metadata=metadata)
+        elif mode == SongFirstSlideMode.Footer:
+            first_slide = self.render_footer(dict(footer_vars, first_slide=True))
+            if first_slide is None:
+                first_slide = '\n'.join(service_item.raw_footer)
+            service_item.add_from_text(first_slide, 'O2', footer_html='', metadata=metadata)
+
+    def find_background_audio(self, file_path: Path) -> Optional[Path]:
+        """
+        The background audio of a song is an audio file next to it with the same name, e.g. "Song.mp3" for "Song.xml"
+
+        :param file_path: The song file
+        :return: The audio file, or None if there is none
+        """
+        audio, _ = get_supported_media_suffix()
+        suffixes = {suffix[1:].lower() for suffix in audio if suffix}
+        try:
+            candidates = sorted(file_path.parent.glob(glob.escape(file_path.stem) + '.*'))
+        except OSError:
+            return None
+        return next((path for path in candidates if path.suffix.lower() in suffixes and path.is_file()), None)
+
+    def add_background_audio(self, service_item, file_path: Path):
+        """
+        Play the audio file of the song in the background, like the linked audio of the Songs plugin
+
+        :param service_item: The service item to be amended
+        :param file_path: The song file
+        """
+        audio_path = self.find_background_audio(file_path)
+        if not audio_path or not State().check_preconditions('media'):
+            return
+        service_item.add_capability(ItemCapabilities.HasBackgroundAudio)
+        service_item.background_audio = [(audio_path, sha256_file_hash(audio_path))]
+        service_item.set_media_length(self.media_controller.media_length(audio_path))
+        service_item.metadata.append('<em>{label}:</em> {media}'.format(
+            label=translate('SongsPlugin.MediaItem', 'Media'), media=audio_path.name))
 
     def generate_footer(self, service_item, song: FileSong, authors: Authors):
         """
@@ -290,6 +398,7 @@ class SongFolderMediaItem(FileSystemLibraryItem):
         :param service_item: The service item to be amended
         :param song: The song
         :param authors: The authors of the song
+        :return: The variables of the footer template
         """
         service_item.audit = [song.title, authors.all, song.copyright, song.ccli_number]
         service_item.raw_footer = [song.title]
@@ -332,13 +441,24 @@ class SongFolderMediaItem(FileSystemLibraryItem):
             'topics': song.topics,
             'first_slide': False
         }
+        footer_html = self.render_footer(footer_vars)
+        if footer_html is not None:
+            service_item.footer_html = footer_html
+        return footer_vars
+
+    def render_footer(self, footer_vars: dict) -> Optional[str]:
+        """
+        Render the footer template of the Songs plugin
+
+        :param footer_vars: The variables of the template
+        :return: The HTML, or None if the template is broken and the plain footer should be used
+        """
         try:
             footer_template = self.settings.value('songs/footer template')
-            service_item.footer_html = mako.template.Template(footer_template).render_unicode(**footer_vars) \
-                .replace('\n', '')
+            return mako.template.Template(footer_template).render_unicode(**footer_vars).replace('\n', '')
         except (mako.exceptions.SyntaxException, mako.exceptions.CompileException):
-            # The plain footer is used instead
             log.error('Failed to render Song footer html:\n' + mako.exceptions.text_error_template().render())
+            return None
 
     def service_load(self, item):
         """

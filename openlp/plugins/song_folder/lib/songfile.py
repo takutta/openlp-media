@@ -43,6 +43,9 @@ _parser = objectify.makeparser(remove_blank_text=True, resolve_entities=False, n
 _MARKUP = re.compile(r'\[[^\]]*\]|\{/?[^}]*\}')
 _NON_WORD = re.compile(r'[\W_]+')
 _WHITESPACE = re.compile(r'\s+')
+# OpenLyrics has no theme, so it is kept in an element of its own namespace, which other programs ignore
+OPENLP_NAMESPACE = 'http://openlp.org/ns/song-folder'
+THEME_TAG = '{{{namespace}}}theme'.format(namespace=OPENLP_NAMESPACE)
 # A forced page break in the lyrics, created from <p style="page-break-after: always;"/>
 FORCED_SPLIT = re.compile(r'\[--\}\{--\]\n?')
 
@@ -92,6 +95,8 @@ class FileSong:
     topics: List[str] = field(default_factory=list)
     verse_order: List[str] = field(default_factory=list)
     verses: List[SongVerse] = field(default_factory=list)
+    # The theme of OpenLP, empty for the default theme
+    theme: str = ''
 
     @property
     def title(self) -> str:
@@ -276,6 +281,9 @@ def parse_song_xml(xml: bytes) -> FileSong:
         if songbook.get('name'):
             song.songbooks.append((songbook.get('name'), songbook.get('entry', '')))
     song.topics = _texts(getattr(properties, 'themes', None), 'theme')
+    theme = song_xml.find(THEME_TAG)
+    if theme is not None:
+        song.theme = _helper()._text(theme).strip()
     return song
 
 

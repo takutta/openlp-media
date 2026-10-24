@@ -28,12 +28,13 @@ from typing import List, Optional, Tuple
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from openlp.core.common.i18n import UiStrings, translate
-from openlp.core.lib.ui import create_button_box, critical_error_message_box
+from openlp.core.common.i18n import UiStrings, get_natural_key, translate
+from openlp.core.common.registry import Registry
+from openlp.core.lib.ui import create_button_box, critical_error_message_box, find_and_set_in_combo_box
 from openlp.core.ui.icons import UiIcons
-from openlp.plugins.songs.lib import VerseType
+from openlp.plugins.songs.lib import VerseType, transpose_lyrics
 from openlp.plugins.songs.lib.db import AuthorType
-from openlp.plugins.songs.lib.ui import SongStrings
+from openlp.plugins.songs.lib.ui import SongStrings, show_key_warning
 from openlp.plugins.song_folder.lib.songfile import FileSong, SongVerse
 
 
@@ -226,6 +227,18 @@ class SongFileEditForm(QtWidgets.QDialog):
         self.forced_split_button = QtWidgets.QPushButton(self.lyrics_tab)
         self.insert_layout.addWidget(self.forced_split_button)
         self.insert_layout.addStretch()
+        self.transpose_widget = QtWidgets.QWidget(self.lyrics_tab)
+        self.transpose_layout = QtWidgets.QHBoxLayout(self.transpose_widget)
+        self.transpose_layout.setContentsMargins(0, 0, 0, 0)
+        self.transpose_label = QtWidgets.QLabel(self.transpose_widget)
+        self.transpose_layout.addWidget(self.transpose_label)
+        self.transpose_up_button = QtWidgets.QPushButton(self.transpose_widget)
+        self.transpose_up_button.setIcon(UiIcons().arrow_up)
+        self.transpose_layout.addWidget(self.transpose_up_button)
+        self.transpose_down_button = QtWidgets.QPushButton(self.transpose_widget)
+        self.transpose_down_button.setIcon(UiIcons().arrow_down)
+        self.transpose_layout.addWidget(self.transpose_down_button)
+        self.insert_layout.addWidget(self.transpose_widget)
         self.lyrics_layout.addLayout(self.insert_layout, 3, 1)
         self.verse_order_label = QtWidgets.QLabel(self.lyrics_tab)
         self.verse_order_edit = QtWidgets.QLineEdit(self.lyrics_tab)
@@ -267,6 +280,15 @@ class SongFileEditForm(QtWidgets.QDialog):
         # Copyright and comments
         self.rights_tab = QtWidgets.QWidget()
         self.rights_tab_layout = QtWidgets.QVBoxLayout(self.rights_tab)
+        self.theme_group_box = QtWidgets.QGroupBox(self.rights_tab)
+        self.theme_layout = QtWidgets.QHBoxLayout(self.theme_group_box)
+        self.theme_combo_box = QtWidgets.QComboBox(self.theme_group_box)
+        self.theme_combo_box.setSizeAdjustPolicy(
+            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.theme_combo_box.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
+                                           QtWidgets.QSizePolicy.Policy.Fixed)
+        self.theme_layout.addWidget(self.theme_combo_box)
+        self.rights_tab_layout.addWidget(self.theme_group_box)
         self.rights_group_box = QtWidgets.QGroupBox(self.rights_tab)
         self.rights_layout = QtWidgets.QGridLayout(self.rights_group_box)
         self.copyright_edit = QtWidgets.QLineEdit(self.rights_group_box)
@@ -296,6 +318,9 @@ class SongFileEditForm(QtWidgets.QDialog):
         self.author_name_edit.returnPressed.connect(self.on_author_add_button_clicked)
         self.author_remove_button.clicked.connect(self.on_author_remove_button_clicked)
         self.copyright_insert_button.clicked.connect(self.on_copyright_insert_button_clicked)
+        self.transpose_up_button.clicked.connect(lambda: self.transpose(1))
+        self.transpose_down_button.clicked.connect(lambda: self.transpose(-1))
+        Registry().register_function('theme_update_list', self.load_themes)
 
     def retranslate_ui(self):
         self.setWindowTitle(translate('SongsPlugin.EditSongForm', 'Song Editor'))
@@ -314,6 +339,12 @@ class SongFileEditForm(QtWidgets.QDialog):
         self.split_button.setToolTip(UiStrings().SplitToolTip)
         self.forced_split_button.setText(UiStrings().ForcedSplit)
         self.forced_split_button.setToolTip(UiStrings().ForcedSplitToolTip)
+        self.transpose_label.setText(UiStrings().Transpose)
+        self.transpose_up_button.setText(UiStrings().Up)
+        self.transpose_down_button.setText(UiStrings().Down)
+        self.theme_group_box.setTitle(UiStrings().Theme)
+        if self.theme_combo_box.count():
+            self.theme_combo_box.setItemText(0, '<{default}>'.format(default=UiStrings().Default))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.lyrics_tab),
                                    translate('SongsPlugin.EditSongForm', 'Title && Lyrics'))
         self.authors_group_box.setTitle(SongStrings().Authors)
@@ -333,7 +364,7 @@ class SongFileEditForm(QtWidgets.QDialog):
         self.ccli_label.setText(UiStrings().CCLISongNumberLabel)
         self.comments_group_box.setTitle(translate('SongsPlugin.EditSongForm', 'Comments'))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.rights_tab),
-                                   translate('SongFolderPlugin.EditSongForm', 'Copyright && Comments'))
+                                   translate('SongFolderPlugin.EditSongForm', 'Theme, Copyright && Comments'))
 
     # Loading and saving
 
@@ -362,6 +393,14 @@ class SongFileEditForm(QtWidgets.QDialog):
         self.copyright_edit.setText(song.copyright)
         self.ccli_number_edit.setText(song.ccli_number)
         self.comments_edit.setPlainText(song.comments)
+        if not self.theme_combo_box.count():
+            theme_manager = Registry().get('theme_manager') if 'theme_manager' in Registry().service_list else None
+            self.load_themes(theme_manager.get_theme_names() if theme_manager else [])
+        if song.theme:
+            find_and_set_in_combo_box(self.theme_combo_box, song.theme)
+        else:
+            self.theme_combo_box.setCurrentIndex(0)
+        self.transpose_widget.setVisible(bool(Registry().get('settings').value('songs/enable chords')))
         self.title_edit.setFocus()
 
     def get_song(self) -> FileSong:
@@ -387,6 +426,7 @@ class SongFileEditForm(QtWidgets.QDialog):
         song.copyright = self.copyright_edit.text().strip()
         song.ccli_number = self.ccli_number_edit.text().strip()
         song.comments = self.comments_edit.toPlainText().strip()
+        song.theme = self.theme_combo_box.currentText() if self.theme_combo_box.currentIndex() > 0 else ''
         return song
 
     def validate(self) -> bool:
@@ -484,6 +524,37 @@ class SongFileEditForm(QtWidgets.QDialog):
     def on_author_remove_button_clicked(self):
         for item in self.authors_list_view.selectedItems():
             self.authors_list_view.takeTopLevelItem(self.authors_list_view.indexOfTopLevelItem(item))
+
+    def load_themes(self, theme_list: List[str]):
+        """
+        Fill the theme list, with the default theme first. Called by the theme manager when the themes change.
+
+        :param theme_list: The names of the themes
+        """
+        current = self.theme_combo_box.currentText() if self.theme_combo_box.currentIndex() > 0 else ''
+        self.theme_combo_box.clear()
+        self.theme_combo_box.addItem('<{default}>'.format(default=UiStrings().Default))
+        self.theme_combo_box.addItems(sorted(theme_list, key=get_natural_key))
+        if current:
+            find_and_set_in_combo_box(self.theme_combo_box, current)
+
+    def transpose(self, steps: int):
+        """
+        Transpose the chords of the lyrics, like the verse editor of the Songs plugin
+
+        :param steps: Half steps up (positive) or down (negative)
+        """
+        text = self.lyrics_edit.toPlainText()
+        chords = re.findall(r'\[(.*?)\]', re.sub(r'---\[.*?\]---|\[---\]|\[--}{--\]', '\n', text))
+        if chords and not chords[0].startswith('='):
+            show_key_warning(self)
+        try:
+            self.lyrics_edit.setPlainText(transpose_lyrics(text, steps))
+        except KeyError as error:
+            critical_error_message_box(title=translate('SongsPlugin.EditVerseForm', 'Transposing failed'),
+                                       message=translate('SongsPlugin.EditVerseForm',
+                                                         'Transposing failed because of invalid chord:\n{err_msg}'
+                                                         ).format(err_msg=error))
 
     def on_copyright_insert_button_clicked(self):
         self.copyright_edit.insert(SongStrings().CopyrightSymbol)
