@@ -187,19 +187,6 @@ class MediaFolderMediaItem(FileSystemLibraryItem):
         item.icon = UiIcons().video
         return item
 
-    def on_add_click(self):
-        """
-        Add the selected files to the service. Selected folders add the media files directly inside them.
-        """
-        if not self.list_view.selectedIndexes():
-            super().on_add_click()
-            return
-        drop_position = self.service_manager.get_drop_position()
-        for file_path in self.selected_file_paths():
-            self.add_to_service(self.create_item_from_id(file_path), position=drop_position)
-            if drop_position != -1:
-                drop_position += 1
-
     def get_list(self, media_type: MediaType = MediaType.Audio) -> List[Path]:
         """
         Get the list of media, optionally of only one type.

@@ -209,14 +209,16 @@ def test_delete_moves_to_trash(mocked_question, mocked_trash, library_item, root
     # GIVEN: A selected folder and a user who says yes
     mocked_question.return_value = QtWidgets.QMessageBox.StandardButton.Yes
     mocked_trash.return_value = True
-    library_item.delete_item = MagicMock()
+    existed = []
+    library_item.delete_item = MagicMock(side_effect=lambda path: existed.append(path.exists()))
     find_item(library_item, root / 'Sub A').setSelected(True)
 
     # WHEN: Delete is clicked
     library_item.on_delete_click()
 
-    # THEN: The folder is trashed and the files in it are cleaned up
+    # THEN: The folder is trashed and the files in it are cleaned up while they still exist
     mocked_trash.assert_called_once_with(root / 'Sub A')
+    assert existed == [True, True]
     assert sorted(call.args[0] for call in library_item.delete_item.call_args_list) == \
         sorted([root / 'Sub A' / 'a.txt', root / 'Sub A' / 'Deep' / 'deep.txt'])
 

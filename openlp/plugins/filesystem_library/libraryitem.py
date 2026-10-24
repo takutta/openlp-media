@@ -260,9 +260,10 @@ class FileSystemLibraryItem(MediaManagerItem):
 
     def delete_item(self, file_path: Path):
         """
-        Called after a file has been removed, so that descendant classes can clean up thumbnails etc.
+        Called just before a file is moved to the trash, so that descendant classes can clean up thumbnails etc.
+        The file still exists when this is called.
 
-        :param file_path: The file that was removed
+        :param file_path: The file that is being removed
         """
         pass
 
@@ -415,6 +416,20 @@ class FileSystemLibraryItem(MediaManagerItem):
             return []
         return [Path(entry.path) for entry in sorted(entries, key=lambda entry: get_natural_key(entry.name))
                 if entry.is_file() and not entry.name.startswith('.') and self.is_supported_file(Path(entry.path))]
+
+    def on_add_click(self):
+        """
+        Add the selected items to the service. When each file is a service item of its own, selected folders add the
+        files directly inside them.
+        """
+        if self.single_service_item or not self.list_view.selectedIndexes():
+            super().on_add_click()
+            return
+        drop_position = self.service_manager.get_drop_position()
+        for file_path in self.selected_file_paths():
+            self.add_to_service(self.create_item_from_id(file_path), position=drop_position)
+            if drop_position != -1:
+                drop_position += 1
 
     def create_item_from_id(self, item_id: Any) -> QtWidgets.QTreeWidgetItem:
         """
@@ -610,11 +625,9 @@ class FileSystemLibraryItem(MediaManagerItem):
             return
         failed = []
         for path in paths:
-            removed_files = list(self.iter_files(path)) if path.is_dir() else [path]
-            if move_to_trash(path):
-                for file_path in removed_files:
-                    self.delete_item(file_path)
-            else:
+            for file_path in (self.iter_files(path) if path.is_dir() else [path]):
+                self.delete_item(file_path)
+            if not move_to_trash(path):
                 failed.append(path.name)
         self.reload()
         if failed:
