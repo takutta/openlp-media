@@ -22,13 +22,17 @@
 The Media Folder plugin
 """
 import logging
+from pathlib import Path
 
+from openlp.core.common.enum import PluginStatus
 from openlp.core.common.i18n import translate
+from openlp.core.common.settings import Settings
 from openlp.core.lib import build_icon
 from openlp.core.lib.plugin import Plugin, StringContent
 from openlp.core.state import State
 from openlp.core.ui.icons import UiIcons
 
+from openlp.plugins.filesystem_library.translations import LIBRARY_TRANSLATIONS_PATH, install_translator
 from openlp.plugins.media_folder.lib.mediaitem import MediaFolderMediaItem
 
 
@@ -42,6 +46,10 @@ class MediaFolderPlugin(Plugin):
     log.info('{name} MediaFolderPlugin loaded'.format(name=__name__))
 
     def __init__(self):
+        # The plugin keeps its settings and translations to itself, so that the core of OpenLP needs no changes
+        Settings.extend_default_settings({'media_folder/status': PluginStatus.Inactive})
+        install_translator(LIBRARY_TRANSLATIONS_PATH)
+        install_translator(Path(__file__).parent / 'i18n')
         super().__init__('media_folder', MediaFolderMediaItem)
         self.weight = -6
         self.icon_path = UiIcons().video

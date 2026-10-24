@@ -113,6 +113,22 @@ def test_generate_slide_data(media_item, media_root):
     assert service_item.slides[0]['title'] == 'intro.mp4'
     assert service_item.is_capable(ItemCapabilities.RequiresMedia)
     assert service_item.media_length == 1234
+    assert service_item.is_capable(ItemCapabilities.OnLoadUpdate)
+    assert service_item.icon is not None
+
+
+def test_service_load_sets_icon(media_item):
+    """A service item loaded from a service file gets its icon back"""
+    # GIVEN: A service item without an icon, like the core makes for plugins it does not know
+    service_item = ServiceItem(None)
+    service_item.icon = None
+
+    # WHEN: The service item is processed after loading
+    result = media_item.service_load(service_item)
+
+    # THEN: The same item is returned with an icon
+    assert result is service_item
+    assert service_item.icon is not None
 
 
 def test_generate_slide_data_for_folder(media_item, media_root):

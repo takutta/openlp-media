@@ -31,7 +31,7 @@ from openlp.core.lib import ServiceItemContext
 from openlp.core.lib.serviceitem import ItemCapabilities
 from openlp.core.lib.ui import critical_error_message_box
 from openlp.core.state import State
-from openlp.core.ui.filesystemlibrary import FileSystemLibraryItem, ItemType, ItemTypeRole
+from openlp.plugins.filesystem_library.libraryitem import FileSystemLibraryItem, ItemType, ItemTypeRole
 from openlp.core.ui.icons import UiIcons
 from openlp.core.ui.media import MediaType, get_supported_media_suffix
 
@@ -167,11 +167,24 @@ class MediaFolderMediaItem(FileSystemLibraryItem):
         service_item.add_capability(ItemCapabilities.CanAutoStartForLive)
         service_item.add_capability(ItemCapabilities.CanEditTitle)
         service_item.add_capability(ItemCapabilities.RequiresMedia)
+        # Lets service_load() set the icon again when the service is opened from a file
+        service_item.add_capability(ItemCapabilities.OnLoadUpdate)
+        # The core only knows the icons of its own plugins
+        service_item.icon = UiIcons().video
         # force a non-existent theme
         service_item.theme = -1
         # validate the item after all capabilities has been added
         service_item.validate_item()
         return True
+
+    def service_load(self, item):
+        """
+        Set the icon of a service item that was loaded from a service file
+
+        :param item: The service item that was loaded
+        """
+        item.icon = UiIcons().video
+        return item
 
     def on_add_click(self):
         """

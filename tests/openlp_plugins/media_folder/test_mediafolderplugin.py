@@ -23,6 +23,7 @@ Test the media folder plugin
 """
 from openlp.core.common.enum import PluginStatus
 from openlp.core.common.registry import Registry
+from openlp.core.common.settings import Settings
 from openlp.core.state import State
 from openlp.plugins.media_folder.media_folder_plugin import MediaFolderPlugin
 
@@ -41,6 +42,21 @@ def test_plugin_registers_itself(state, settings):
     assert Registry().get('media_folder_plugin') is plugin
     assert plugin.status == PluginStatus.Inactive
     assert plugin.check_pre_conditions() is True
+
+
+def test_plugin_adds_its_own_default_settings(state, settings):
+    """The plugin does not need its status in the default settings of the core"""
+    # GIVEN: Default settings without the status of the plugin
+    Settings.__default_settings__.pop('media_folder/status', None)
+    State().add_service('mediacontroller', 0)
+    State().update_pre_conditions('mediacontroller', True)
+
+    # WHEN: The plugin is created
+    plugin = MediaFolderPlugin()
+
+    # THEN: The plugin added the default itself
+    assert Settings.__default_settings__['media_folder/status'] == PluginStatus.Inactive
+    assert plugin.status == PluginStatus.Inactive
 
 
 def test_plugin_disabled_without_media_controller(state, settings):

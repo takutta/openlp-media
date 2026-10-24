@@ -9,6 +9,9 @@ suoraa tiedostopolkua tietokannan sijaan: valittu kansio levyllä *on* kirjasto.
 - Origin: `takutta/openlp-media` (GitHub, private).
 - Työhaara: `feature/filesystem-plugins`. Upstreamin `master` on yhdistetty siihen (`--allow-unrelated-histories`).
 - Vanhat pluginit (`media`, `images`, `songs`) jätetään ennalleen; uudet tehdään niiden rinnalle.
+- **Ytimeen ei tehdä muutoksia.** Kaikki oma koodi, asetukset, käännökset ja testit ovat hakemistoissa
+  `openlp/plugins/` ja `tests/openlp_plugins/`, jotta upstreamin uudet versiot voi yhdistää ilman konflikteja.
+  Tarkistus: `git diff upstream/master --stat -- openlp/core resources tests/openlp_core` on tyhjä.
 
 ## Tila
 
@@ -18,11 +21,20 @@ suoraa tiedostopolkua tietokannan sijaan: valittu kansio levyllä *on* kirjasto.
 | kuvat | Ei aloitettu |
 | laulut | Ei aloitettu |
 
-Mitään ei ole vielä commitoitu.
-
 ## Mitä on tehty
 
-### Yhteinen pohjaluokka: `openlp/core/ui/filesystemlibrary.py`
+### Yhteinen koodi: `openlp/plugins/filesystem_library/`
+
+Tämä hakemisto ei ole plugin (siinä ei ole `*plugin.py`-tiedostoa, joten pluginmanager ei lataa sitä), vaan
+tiedostojärjestelmäpluginien jaettu kirjasto.
+
+- `libraryitem.py`: pohjaluokka `FileSystemLibraryItem` (alla).
+- `translations.py`: `install_translator(polku)` asentaa kansiosta nykyisen kielen `.qm`-käännöksen omalla
+  `QTranslator`-oliollaan. Kutsu pluginin konstruktorin alussa ennen `super().__init__()`-kutsua sekä
+  `LIBRARY_TRANSLATIONS_PATH`-polulle että pluginin omalle `i18n`-kansiolle.
+- `i18n/fi.ts`: pohjaluokan suomennos.
+
+#### `FileSystemLibraryItem`
 
 `FileSystemLibraryItem(MediaManagerItem)` näyttää juurikansion puuna (kansiot ensin, luonnollinen järjestys,
 piilotetut ohitetaan). Kuva- ja lauluplugin voivat käyttää samaa luokkaa.
@@ -41,6 +53,13 @@ piilotetut ohitetaan). Kuva- ja lauluplugin voivat käyttää samaa luokkaa.
 
 ### Media Folder -plugin: `openlp/plugins/media_folder/`
 
+- Plugin rekisteröi oman `media_folder/status`-oletusasetuksensa (`Settings.extend_default_settings`).
+- Ydin tuntee vain omien pluginiensa palvelukohteiden kuvakkeet, joten `generate_slide_data()` asettaa kuvakkeen
+  itse. Lisäksi palvelukohteella on `OnLoadUpdate`, jolloin `service_load()` palauttaa kuvakkeen, kun lista avataan
+  tiedostosta.
+- Remote-API:n media play/pause/stop (`/api/v2/media/*`) ei toimi media_folder-kohteille, koska ydin tarkistaa
+  pluginin nimen (`name != 'media'`). Tähän ei ole tehty kiertotietä. Slidejen vaihto ja muu remote-ohjaus toimivat.
+  Upstreamille voisi ehdottaa tarkistuksen vaihtamista muotoon `service_item.is_media()`.
 - Pluginin nimi on `media_folder`. Nimen täytyy vastata `de_hump(MediaFolderPlugin)`-muotoa, koska `State`
   hakee pluginia nimellä `<nimi>_plugin`.
 - Listaa ääni- ja videotiedostot `get_supported_media_suffix()`-funktion perusteella, kirjainkoosta
@@ -48,22 +67,22 @@ piilotetut ohitetaan). Kuva- ja lauluplugin voivat käyttää samaa luokkaa.
 - Kansion lisääminen palveluun lisää jokaisen sen mediatiedoston erikseen.
 - Verkko- ja laitestriimit jätettiin pois, koska niillä ei ole tiedostopolkua.
 
-### Pienet muutokset ytimeen
+### Suomennokset: `openlp/plugins/*/i18n/fi.ts`
 
-- `openlp/core/common/settings.py`: `media_folder/status`.
-- `openlp/core/lib/serviceitem.py`: kuvake myös `media_folder`-palvelukohteille.
-- `openlp/core/ui/media/remote.py`: remote-API:n play/pause/stop hyväksyy myös `media_folder`-kohteet.
-- `tests/openlp_core/lib/test_mediamanageritem.py`: korjattu upstreamin bugi (`setup_patcher.stop` ilman sulkuja
-  jätti patchin voimaan muihin testeihin).
-
-### Suomennos: `resources/i18n/fi.ts`
-
-- Uudet kontekstit `OpenLP.FileSystemLibraryItem`, `MediaFolderPlugin` ja `MediaFolderPlugin.MediaItem`.
-  Lisäksi täydennetty kolme puuttuvaa jaettua tekstiä ("Lisää kansio" jne.).
+- Käännökset ovat pluginien omissa tiedostoissa, eivät `resources/i18n/fi.ts`:ssä, jota upstream päivittää.
+- `filesystem_library/i18n/fi.ts`: konteksti `OpenLP.FileSystemLibraryItem` sekä pohjaluokan käyttämät ytimen
+  tekstit (`OpenLP.Ui` "Add folder" jne.), joista osa puuttuu ytimen suomennoksesta.
+- `media_folder/i18n/fi.ts`: kontekstit `MediaFolderPlugin`, `MediaFolderPlugin.MediaItem` ja käytetyt
+  `MediaPlugin.MediaItem`-tekstit.
 - Termistö noudattaa olemassa olevaa suomennosta: service = "Lista", live = "Esitys".
-- Tiedosto on LF-muotoinen. Samanniminen konteksti (esim. `OpenLP.Ui`) esiintyy tiedostossa useasti.
-- `.qm`-tiedostoja ei commitoida. Lähdekoodista ajettaessa:
-  `uv run pyside6-lrelease resources/i18n/fi.ts -qm resources/i18n/fi.qm`
+- Päivitys lähdekoodin muututtua (esimerkki): `uv run pyside6-lupdate openlp/plugins/media_folder/*.py
+  openlp/plugins/media_folder/lib/*.py -ts openlp/plugins/media_folder/i18n/fi.ts`. lupdate ei löydä ytimen
+  `UiStrings`-tekstejä, joten `OpenLP.Ui`-konteksti on lisätty käsin.
+- `.qm`-tiedostoja ei commitoida. Lähdekoodista ajettaessa käännä kaikki:
+  ```
+  uv run pyside6-lrelease resources/i18n/fi.ts -qm resources/i18n/fi.qm
+  for d in openlp/plugins/*/i18n; do uv run pyside6-lrelease $d/fi.ts -qm $d/fi.qm; done
+  ```
 
 ## Kehitys
 
@@ -74,12 +93,18 @@ uv run flake8 <tiedostot>      # rivin maksimipituus 120
 uv run python run_openlp.py
 ```
 
-- Testit: `tests/openlp_core/ui/test_filesystemlibrary.py` ja `tests/openlp_plugins/media_folder/`.
+- Testit: `tests/openlp_plugins/filesystem_library/` ja `tests/openlp_plugins/media_folder/`.
 - Testeissä oikeita widgettejä luotaessa `ActionList.shortcut_map` pitää tyhjentää testien välillä.
+- Upstreamin `tests/openlp_core/lib/test_mediamanageritem.py` jättää `MediaManagerItem._setup`-patchin voimaan
+  (`setup_patcher.stop` ilman sulkuja). Pluginien testipakettien `conftest.py` kutsuu siksi `patch.stopall()`.
+  Uusiin testipaketteihin, jotka luovat oikeita media manager -itemejä, tarvitaan sama fixture.
 - `uv run` / `uv sync` muuttaa `uv.lock`-tiedostoa (lisää `packaging`). Palauta se, ellei muutosta tarkoiteta.
 - Käytä tiedostoissa samaa GPL-lisenssiotsikkoa kuin muualla koodissa.
 
 ## Seuraavaksi
+
+Uudet pluginit tehdään samalla mallilla kuin `media_folder`: oletusasetukset, käännökset, kuvakkeet ja testit
+pluginin omassa hakemistossa, ei ytimessä.
 
 1. Kuvaplugin `FileSystemLibraryItem`-luokan päälle (pikkukuvat, taustan korvaus ja teema-asetukset
    `images`-pluginista).

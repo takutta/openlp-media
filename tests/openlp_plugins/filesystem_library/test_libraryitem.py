@@ -28,7 +28,7 @@ import pytest
 from PySide6 import QtCore, QtWidgets
 
 from openlp.core.common.actions import ActionList
-from openlp.core.ui.filesystemlibrary import FileSystemLibraryItem, ItemType, ItemTypeRole
+from openlp.plugins.filesystem_library.libraryitem import FileSystemLibraryItem, ItemType, ItemTypeRole
 
 
 class TextLibraryItem(FileSystemLibraryItem):
@@ -167,7 +167,7 @@ def test_validate_and_load_copies_files(library_item, root, temp_folder):
     assert find_item(library_item, root / 'Sub B' / 'new.txt').isSelected()
 
 
-@patch('openlp.core.ui.filesystemlibrary.critical_error_message_box')
+@patch('openlp.plugins.filesystem_library.libraryitem.critical_error_message_box')
 def test_validate_and_load_skips_existing(mocked_error, library_item, root, temp_folder):
     """Files are never overwritten"""
     # GIVEN: A file with the same name as a file in the library
@@ -202,8 +202,8 @@ def test_dnd_move_folder_into_itself_is_ignored(library_item, root):
     assert (root / 'Sub A' / 'Deep').is_dir()
 
 
-@patch('openlp.core.ui.filesystemlibrary.move_to_trash')
-@patch('openlp.core.ui.filesystemlibrary.QtWidgets.QMessageBox.question')
+@patch('openlp.plugins.filesystem_library.libraryitem.move_to_trash')
+@patch('openlp.plugins.filesystem_library.libraryitem.QtWidgets.QMessageBox.question')
 def test_delete_moves_to_trash(mocked_question, mocked_trash, library_item, root):
     """Deleting asks first and moves the files to the trash"""
     # GIVEN: A selected folder and a user who says yes
@@ -221,8 +221,8 @@ def test_delete_moves_to_trash(mocked_question, mocked_trash, library_item, root
         sorted([root / 'Sub A' / 'a.txt', root / 'Sub A' / 'Deep' / 'deep.txt'])
 
 
-@patch('openlp.core.ui.filesystemlibrary.move_to_trash')
-@patch('openlp.core.ui.filesystemlibrary.QtWidgets.QMessageBox.question')
+@patch('openlp.plugins.filesystem_library.libraryitem.move_to_trash')
+@patch('openlp.plugins.filesystem_library.libraryitem.QtWidgets.QMessageBox.question')
 def test_delete_cancelled(mocked_question, mocked_trash, library_item, root):
     """Nothing is deleted when the user says no"""
     mocked_question.return_value = QtWidgets.QMessageBox.StandardButton.No
@@ -231,7 +231,7 @@ def test_delete_cancelled(mocked_question, mocked_trash, library_item, root):
     mocked_trash.assert_not_called()
 
 
-@patch('openlp.core.ui.filesystemlibrary.QtWidgets.QInputDialog.getText')
+@patch('openlp.plugins.filesystem_library.libraryitem.QtWidgets.QInputDialog.getText')
 def test_add_folder(mocked_get_text, library_item, root):
     """A new folder is created inside the current folder"""
     # GIVEN: A selected folder
