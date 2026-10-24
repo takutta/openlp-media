@@ -148,18 +148,25 @@ tietokantaa ei ole.
   - Remote-API:n haku (`search()`) käyttää indeksiä ja palauttaa tiedostopolun id:nä.
 - Plugin rekisteröi `song_folder/status`-oletusasetuksen ja songs-pluginin `song_footer`-oletuksen, joten
   alatunniste toimii, vaikka songs-plugin olisi pois päältä.
-- `lib/songwriter.py`: `song_to_xml(laulu, alkuperäinen)` ja `write_song_file()` kirjoittavat `FileSong`-olion
-  OpenLyrics-tiedostoksi. XML tehdään songs-pluginin `OpenLyrics.song_to_xml`-funktiolla, jolle annetaan
-  `SimpleNamespace`-olio tietokannan `Song`-olion tilalle.
-  - Alkuperäisestä tiedostosta säilyvät kaikki ominaisuudet, joita lomake ei tunne (`tempo`, `key`, `publisher`,
-    `version` jne.), `<format>`-tagimäärittelyt (myös käyttämättömät), kolmas ja sitä myöhemmät otsikot, `<song>`-
-    elementin attribuutit (`createdIn`, `chordNotation`…) ja vieraat elementit. Tiedostot ilman OpenLyrics-
-    nimiavaruutta siirretään nimiavaruuteen. Säkeiden omat attribuutit (`lang`-attribuuttia lukuun ottamatta) ja
-    tekijän `lang` katoavat.
-  - Tiedosto kirjoitetaan piilotettuun väliaikaistiedostoon ja vaihdetaan paikalleen (`os.replace`), joten
-    epäonnistunut tallennus ei riko vanhaa tiedostoa. Tiedoston oikeudet säilyvät.
-  - `new_song_path(kansio, otsikko)` antaa uudelle laululle nimen otsikosta. Kiellettyjen merkkien tilalle tulee `_`,
-    eikä mitään ylikirjoiteta (lisätään ` (2)`).
+- `lib/songwriter.py`: `song_to_xml(laulu, alkuperäinen)` ja `write_song_file(laulu, polku, keep_contents)`
+  kirjoittavat OpenLyrics 0.9:ää ilman tietokantaa. Tiedosto yhdistettiin kahden rinnakkaisen session toteutuksista.
+  - Olemassa olevasta tiedostosta korvataan vain muokattavat ominaisuudet (`EDITED_PROPERTIES`: nimet, tekijät,
+    copyright, CCLI, säejärjestys, laulukirjat, aiheet, kommentit) sekä `<lyrics>`. Ne korvataan omille paikoilleen,
+    ja uudet lisätään skeeman järjestyksessä (`PROPERTY_ORDER`). Kaikki muu säilyy järjestyksessään: tempo,
+    sävellaji, julkaisija, `<song>`-attribuutit (`createdIn`, `chordNotation`…), vieraat elementit ja tiedoston omat
+    muotoilutagit (myös käyttämättömät). Sanoitusten käyttämät uudet tagit lisätään. Säkeiden `<comment>`-elementit
+    ja säkeiden omat attribuutit (paitsi `lang`) eivät säily, koska `<lyrics>` kirjoitetaan uudelleen.
+  - Tiedosto ilman OpenLyrics-nimiavaruutta siirretään nimiavaruuteen. Rikkinäinen tai muu kuin laulutiedosto
+    kirjoitetaan alusta.
+  - Sanoitusten muunnos (soinnut, muotoilutagit, `[---]`, `[--}{--]`) tehdään songs-pluginin `OpenLyrics`-
+    apumetodeilla, joten tulos on sama kuin songs-pluginin viennissä. Säkeen lopussa oleva `[---]` jätetään pois.
+  - Tiedosto sisennetään, mutta `<lines>`-elementtien sisältöä ei, koska muut ohjelmat lukevat sen välilyönnit
+    tekstinä.
+  - Kirjoitus tehdään piilotettuun väliaikaistiedostoon samaan kansioon ja vaihdetaan `os.replace`illa, joten
+    epäonnistunut tallennus ei riko vanhaa tiedostoa. Virheet nostavat `SongFileError`in. Vanhan tiedoston oikeudet
+    säilyvät, ja uusi saa tavalliset oikeudet (umask).
+  - `song_file_name(otsikko, kansio)` tekee uudelle laululle tiedostonimen otsikosta (kielletyt merkit → `_`) ja
+    lisää tarvittaessa ` (2)`, ` (3)`… Mitään ei ylikirjoiteta.
   - Testi `test_resource_files_survive_a_round_trip` varmistaa, että songs-pluginin OpenLyrics-testitiedostot
     säilyvät samoina, kun ne kirjoitetaan uudelleen.
 - `forms/editsongform.py`: `SongFileEditForm` on oma, kevyempi lomake (vanha on tietokantasidonnainen).
@@ -173,16 +180,21 @@ tietokantaa ei ole.
     tulee ytimestä.
 - Muokkaus mediaitemissä:
   - "Uusi" kirjoittaa laulun valittuun kansioon ja "Muokkaa" (myös kontekstivalikossa) valittuun tiedostoon.
-    Muokattu laulu päivitetään myös Listaan (`replace_service_item`) aina, toisin kuin songs-pluginissa, jossa
-    se riippuu `songs/update service on edit` -asetuksesta.
+    Tiedostonimi ei muutu, vaikka otsikko muuttuisi. Muokattu laulu päivitetään myös Listaan
+    (`replace_service_item`) aina, toisin kuin songs-pluginissa, jossa se riippuu `songs/update service on edit`
+    -asetuksesta.
   - Palvelukohteella on `CanEdit`, ja `edit_id` on tiedostopolku. Tällöin Listan ja esikatselun "Muokkaa" toimivat
-    (`on_remote_edit`). `edit_id` ei tallennu listatiedostoon, joten `service_load()` palauttaa sen
-    `data_string['file path']`-arvosta.
+    (`on_remote_edit`, vain kirjaston sisällä oleville tiedostoille). `edit_id` ei tallennu listatiedostoon, joten
+    `service_load()` palauttaa sen `data_string['file path']`-arvosta, jos tiedosto on yhä olemassa. Muuten
+    `CanEdit` poistetaan.
   - Jos tiedosto muuttuu levyllä muokkauksen aikana, ohjelma kysyy ennen ylikirjoitusta. Jos tallennus epäonnistuu,
     lomake avautuu uudelleen sisältö tallessa. Tallennuksen jälkeen indeksistä poistetaan tiedoston vanha tieto,
     koska koko ja aikaleima voivat olla samat.
 - Puuttuu vielä:
-  - Taustamusiikki (`HasBackgroundAudio`), ensimmäisen sliden tila ja isot kirjaimet.
+  - Taustamusiikki (`HasBackgroundAudio`), ensimmäisen sliden tila ja isot kirjaimet. Taustamusiikin voisi ottaa
+    esim. laulun vieressä olevasta samannimisestä äänitiedostosta.
+  - Säkeen muokkaus erillisessä dialogissa (songs-pluginin `EditVerseForm`), teema laululle ja sointujen
+    transponointi lomakkeessa.
   - Remote-API:n transponointi (`/api/v2/plugins/songs/transpose-live-item`) ei toimi, koska ydin tarkistaa
     nimen (`name != 'songs'`). Sama tilanne kuin media_folderin play/pause-kutsuissa.
 
@@ -214,7 +226,8 @@ Ilman sitä `media_folder`-kohteet merkitään listassa virheellisiksi.
   "Presentaatio" (ei "esitys", joka tarkoittaa livea).
 - Päivitys lähdekoodin muututtua (esimerkki): `uv run pyside6-lupdate openlp/plugins/media_folder/*.py
   openlp/plugins/media_folder/lib/*.py -ts openlp/plugins/media_folder/i18n/fi.ts`. lupdate ei löydä ytimen
-  `UiStrings`-tekstejä, joten `OpenLP.Ui`-konteksti on lisätty käsin.
+  `UiStrings`-tekstejä, joten `OpenLP.Ui`-konteksti on lisätty käsin. song_folderissa mukaan myös
+  `openlp/plugins/song_folder/forms/*.py`.
 - `.qm`-tiedostoja ei commitoida (`openlp/plugins/.gitignore`). Lähdekoodista ajettaessa käännä kaikki:
   ```
   uv run pyside6-lrelease resources/i18n/fi.ts -qm resources/i18n/fi.qm

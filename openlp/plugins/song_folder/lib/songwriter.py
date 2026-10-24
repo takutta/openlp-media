@@ -19,185 +19,255 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>. #
 ##########################################################################
 """
-Writes songs to OpenLyrics files without a database. The XML is made by the OpenLyrics export of the Songs plugin, and
-everything in the original file that the editor does not know about is kept: other properties (tempo, key, publisher
-etc.), formatting tag definitions, extra titles and the attributes of the song.
+Writes songs to OpenLyrics files without a database. When a file is saved again, only the parts which OpenLP edits are
+replaced, so that everything else in the file (tempo, key, publisher, comments in the lyrics etc.) is kept.
 """
+import html
 import os
 import re
 import tempfile
-from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Optional
 
 from lxml import etree
 
-from openlp.plugins.songs.lib.openlyricsxml import NAMESPACE, SongXML
-from openlp.plugins.song_folder.lib.songfile import FileSong, _helper
+from openlp.core.version import get_version
+from openlp.plugins.song_folder.lib.songfile import FileSong, SongFileError
+from openlp.plugins.songs.lib.openlyricsxml import NAMESPACE, OpenLyrics
 
 
-# The properties that come from the song, everything else is copied from the original file
-SONG_PROPERTIES = {'titles', 'authors', 'copyright', 'ccliNo', 'comments', 'songbooks', 'themes', 'verseOrder'}
-# The attributes of <song> that describe the new file
-NEW_ATTRIBUTES = {'version', 'modifiedIn', 'modifiedDate'}
-_parser = etree.XMLParser(remove_blank_text=True, resolve_entities=False, no_network=True)
-_UNSAFE_FILE_NAME = re.compile(r'[\x00-\x1f<>:"/\\|?*]+')
+OPENLYRICS_VERSION = '0.9'
+# The order of the elements in <properties>, from the OpenLyrics schema
+PROPERTY_ORDER = ['titles', 'authors', 'copyright', 'ccliNo', 'releaseDate', 'transposition', 'tempo', 'key',
+                  'variant', 'publisher', 'version', 'keywords', 'verseOrder', 'songbooks', 'themes', 'comments']
+# The properties which are edited in OpenLP, everything else is kept as it is
+EDITED_PROPERTIES = ['titles', 'authors', 'copyright', 'ccliNo', 'verseOrder', 'songbooks', 'themes', 'comments']
+# Characters which are not allowed in file names on some operating systems
+_BAD_FILE_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+# An optional split at the end of a verse, which would be written as text
 _TRAILING_SPLIT = re.compile(r'(\n\[---\])+\s*$')
+# Do not load anything from outside the file
+_parser = etree.XMLParser(remove_blank_text=True, resolve_entities=False, no_network=True)
 
 
 def _tag(name: str) -> str:
     return '{{{namespace}}}{name}'.format(namespace=NAMESPACE, name=name)
 
 
-def _local_name(element) -> Optional[str]:
-    """
-    The name of an element without its namespace, or None for comments and processing instructions
-    """
-    return etree.QName(element).localname if isinstance(element.tag, str) else None
-
-
-def _child(element, name: str):
-    """
-    Returns the first child of an element with a name, in any namespace
-    """
-    if element is None:
-        return None
-    return next((child for child in element if _local_name(child) == name), None)
-
-
-def _to_namespace(element):
-    """
-    Move an element copied from a file without the OpenLyrics namespace into it
-    """
-    for node in element.iter():
-        if isinstance(node.tag, str) and etree.QName(node).namespace is None:
-            node.tag = _tag(etree.QName(node).localname)
+def _sub_element(parent, tag_name: str, text: Optional[str] = None, **attributes):
+    element = etree.SubElement(parent, _tag(tag_name), **attributes)
+    if text:
+        element.text = text
     return element
 
 
-def _song_to_record(song: FileSong) -> SimpleNamespace:
+def _properties_element(song: FileSong):
     """
-    Turn a song into an object that looks like a song in the database of the Songs plugin, for its OpenLyrics export
+    Build the <properties> element with the fields OpenLP edits
     """
-    lyrics = SongXML()
+    properties = etree.Element(_tag('properties'))
+    titles = _sub_element(properties, 'titles')
+    for title in song.titles:
+        _sub_element(titles, 'title', title)
+    if song.authors:
+        authors = _sub_element(properties, 'authors')
+        for name, author_type in song.authors:
+            # OpenLyrics has no "words+music" type, so somebody who wrote both is listed twice
+            if author_type == 'words+music':
+                _sub_element(authors, 'author', name, type='words')
+                _sub_element(authors, 'author', name, type='music')
+            elif author_type:
+                _sub_element(authors, 'author', name, type=author_type)
+            else:
+                _sub_element(authors, 'author', name)
+    if song.copyright:
+        _sub_element(properties, 'copyright', song.copyright)
+    if song.ccli_number:
+        _sub_element(properties, 'ccliNo', song.ccli_number)
+    if song.verse_order:
+        _sub_element(properties, 'verseOrder', ' '.join(song.verse_order))
+    if song.songbooks:
+        songbooks = _sub_element(properties, 'songbooks')
+        for book, entry in song.songbooks:
+            if entry:
+                _sub_element(songbooks, 'songbook', name=book, entry=entry)
+            else:
+                _sub_element(songbooks, 'songbook', name=book)
+    if song.topics:
+        themes = _sub_element(properties, 'themes')
+        for topic in song.topics:
+            _sub_element(themes, 'theme', topic)
+    if song.comments:
+        comments = _sub_element(properties, 'comments')
+        for comment in song.comments.split('\n'):
+            if comment.strip():
+                _sub_element(comments, 'comment', comment.strip())
+    return properties
+
+
+def _lyrics_elements(song: FileSong):
+    """
+    Build the <lyrics> and <format> elements. The conversion of chords, formatting tags and line breaks is done with
+    the code of the Songs plugin, so the result is the same as when the Songs plugin exports a song.
+
+    :return: A tuple of (lyrics element, format element or None)
+    """
+    open_lyrics = OpenLyrics(None)
+    # The Songs plugin builds the elements without a namespace, and the namespace is added when parsing them again
+    format_element = etree.Element('format')
+    tags_element = etree.SubElement(format_element, 'tags', application='OpenLP')
+    lyrics = etree.Element('lyrics')
     for verse in song.verses:
-        # An optional split at the end would be written as text
-        text = _TRAILING_SPLIT.sub('', verse.text)
-        lyrics.add_verse_to_lyrics(verse.tag, verse.number + verse.part, text, verse.lang)
-    return SimpleNamespace(
-        title=song.title,
-        alternate_title=song.alternate_title,
-        comments=song.comments,
-        copyright=song.copyright,
-        verse_order=' '.join(song.verse_order),
-        ccli_number=song.ccli_number,
-        authors_songs=[SimpleNamespace(author=SimpleNamespace(display_name=name), author_type=author_type)
-                       for name, author_type in song.authors],
-        songbook_entries=[SimpleNamespace(songbook=SimpleNamespace(name=book), entry=entry)
-                          for book, entry in song.songbooks],
-        topics=[SimpleNamespace(name=topic) for topic in song.topics],
-        lyrics=lyrics.extract_xml().decode('utf-8'),
-        last_modified=datetime.now().replace(microsecond=0)
-    )
+        verse_element = etree.SubElement(lyrics, 'verse', name=verse.name)
+        if verse.lang:
+            verse_element.set('lang', verse.lang)
+        parts = html.escape(_TRAILING_SPLIT.sub('', verse.text)).split('\n[---]\n')
+        start_tags = ''
+        for index, part in enumerate(parts):
+            # Close the formatting tags in each part and open them again in the next one
+            part = start_tags + part
+            start_tags, end_tags = open_lyrics._get_missing_tags(part)
+            part = open_lyrics._chordpro_to_openlyrics(part + end_tags)
+            lines_element = open_lyrics._add_text_with_tags_to_lines(verse_element, part, tags_element)
+            if index < len(parts) - 1:
+                lines_element.set('break', 'optional')
+    for element in (lyrics, format_element):
+        for node in element.iter():
+            if isinstance(node.tag, str) and not node.tag.startswith('{'):
+                node.tag = _tag(node.tag)
+    return lyrics, format_element if len(tags_element) else None
 
 
-def _merge_original(song_xml, original_xml):
+def _replace_property(properties, new_element, name: str):
     """
-    Copy what the song does not describe from the original file into the new XML
-
-    :param song_xml: The root of the new XML
-    :param original_xml: The root of the original file
+    Put the new version of a property in place of the old one, or in the right place if it is new
     """
-    for name, value in original_xml.attrib.items():
-        if name not in NEW_ATTRIBUTES:
-            song_xml.set(name, value)
-    properties = _child(song_xml, 'properties')
-    for element in _child(original_xml, 'properties') if _child(original_xml, 'properties') is not None else []:
-        if _local_name(element) and _local_name(element) not in SONG_PROPERTIES:
-            properties.append(_to_namespace(deepcopy(element)))
-    # Keep the definitions of the formatting tags, also the ones which are not used any more
-    original_format = _child(original_xml, 'format')
-    if original_format is not None:
-        format_ = _child(song_xml, 'format')
-        if format_ is None:
-            song_xml.insert(song_xml.index(_child(song_xml, 'lyrics')), _to_namespace(deepcopy(original_format)))
-        else:
-            tags = _child(format_, 'tags')
-            known = {tag.get('name') for tag in tags}
-            for original_tags in original_format:
-                for tag in original_tags if _local_name(original_tags) == 'tags' else []:
-                    if _local_name(tag) == 'tag' and tag.get('name') not in known:
-                        tags.append(_to_namespace(deepcopy(tag)))
-                        known.add(tag.get('name'))
-    # Anything else the song has, e.g. elements of other applications
-    for element in original_xml:
-        if _local_name(element) and _local_name(element) not in ('properties', 'format', 'lyrics'):
-            song_xml.append(_to_namespace(deepcopy(element)))
+    old_elements = properties.findall(_tag(name))
+    if old_elements:
+        position = properties.index(old_elements[0])
+        for old_element in old_elements:
+            properties.remove(old_element)
+    else:
+        position = 0
+        earlier = PROPERTY_ORDER[:PROPERTY_ORDER.index(name)]
+        for index, child in enumerate(properties):
+            if isinstance(child.tag, str) and etree.QName(child).localname in earlier:
+                position = index + 1
+    if new_element is not None:
+        properties.insert(position, new_element)
 
 
-def song_to_xml(song: FileSong, original: Optional[bytes] = None) -> bytes:
+def song_to_xml(song: FileSong, original_xml: Optional[bytes] = None) -> bytes:
     """
     Convert a song to OpenLyrics
 
     :param song: The song
-    :param original: The contents of the file the song was read from. What the song does not describe is kept.
-    :return: The contents of the OpenLyrics file
+    :param original_xml: The current contents of the file, whose other contents are kept
+    :return: The XML
     """
-    xml = _helper().song_to_xml(_song_to_record(song))
-    song_xml = etree.fromstring(xml.encode('utf-8'), _parser)
-    titles = _child(_child(song_xml, 'properties'), 'titles')
-    for title in song.titles[2:]:
-        etree.SubElement(titles, _tag('title')).text = title
-    if original:
+    application_name = 'OpenLP ' + get_version()['version']
+    root = None
+    if original_xml:
         try:
-            original_xml = etree.fromstring(original, _parser)
+            root = etree.fromstring(original_xml, _parser)
         except etree.XMLSyntaxError:
-            original_xml = None
-        if original_xml is not None:
-            _merge_original(song_xml, original_xml)
-    return etree.tostring(song_xml, encoding='UTF-8', xml_declaration=True, pretty_print=True)
+            # Nothing can be kept from a broken file, but the song can still be saved
+            root = None
+        if root is not None and root.tag == 'song':
+            # Some programs leave out the namespace, move the file into it
+            for node in root.iter():
+                if isinstance(node.tag, str) and etree.QName(node).namespace is None:
+                    node.tag = _tag(node.tag)
+        if root is not None and root.tag != _tag('song'):
+            root = None
+    if root is None:
+        root = etree.Element(_tag('song'), nsmap={None: NAMESPACE})
+        root.set('createdIn', application_name)
+    root.set('version', OPENLYRICS_VERSION)
+    root.set('modifiedIn', application_name)
+    root.set('modifiedDate', datetime.now().astimezone().isoformat(timespec='seconds'))
+    new_properties = _properties_element(song)
+    properties = root.find(_tag('properties'))
+    if properties is None:
+        root.insert(0, new_properties)
+    else:
+        for name in EDITED_PROPERTIES:
+            _replace_property(properties, new_properties.find(_tag(name)), name)
+    lyrics, format_element = _lyrics_elements(song)
+    old_lyrics = root.find(_tag('lyrics'))
+    if old_lyrics is not None:
+        old_lyrics.getparent().replace(old_lyrics, lyrics)
+    else:
+        root.append(lyrics)
+    # Keep the formatting tags of the file, and add the ones the lyrics use now
+    if format_element is not None:
+        old_format = root.find(_tag('format'))
+        if old_format is None:
+            root.insert(root.index(lyrics), format_element)
+        else:
+            old_tags = old_format.find(_tag('tags'))
+            if old_tags is None:
+                old_format.append(format_element.find(_tag('tags')))
+            else:
+                known = {tag.get('name') for tag in old_tags.findall(_tag('tag'))}
+                for tag in format_element.find(_tag('tags')).findall(_tag('tag')):
+                    if tag.get('name') not in known:
+                        old_tags.append(tag)
+    # Indent the file, but not the lyrics: whitespace in <lines> is part of the text for other programs
+    saved = [(node, node.text, node.tail) for lines in root.iter(_tag('lines')) for node in lines.iter()]
+    etree.indent(root, space='  ')
+    for node, text, tail in saved:
+        node.text = text
+        if node.tag != _tag('lines'):
+            node.tail = tail
+    return etree.tostring(root, encoding='UTF-8', xml_declaration=True, pretty_print=True)
 
 
-def write_song_file(song: FileSong, file_path: Path, original: Optional[bytes] = None):
+def write_song_file(song: FileSong, file_path: Path, keep_contents: bool = True):
     """
-    Write a song to an OpenLyrics file. The file is replaced in one go, so a failed write does not leave half a song.
+    Save a song to a file. The file is replaced in one go, so it is never left half written.
 
     :param song: The song
     :param file_path: The file to write
-    :param original: The contents of the file the song was read from, see :func:`song_to_xml`
-    :raises OSError: If the file cannot be written
+    :param keep_contents: Keep the parts of an existing file which OpenLP does not edit
+    :raises SongFileError: If the file cannot be written
     """
-    xml = song_to_xml(song, original)
-    # The temporary file is hidden, so that the library does not list it
-    handle, temp_name = tempfile.mkstemp(prefix='.', suffix='.tmp', dir=file_path.parent)
+    original_xml = None
+    if keep_contents and file_path.exists():
+        try:
+            original_xml = file_path.read_bytes()
+        except OSError as error:
+            raise SongFileError(str(error)) from error
+    xml = song_to_xml(song, original_xml)
     try:
-        with os.fdopen(handle, 'wb') as temp_file:
-            temp_file.write(xml)
-        if file_path.exists():
-            os.chmod(temp_name, file_path.stat().st_mode & 0o777)
-        else:
-            # mkstemp makes the file readable only by its owner
-            umask = os.umask(0)
-            os.umask(umask)
-            os.chmod(temp_name, 0o666 & ~umask)
-        os.replace(temp_name, file_path)
-    except BaseException:
-        if os.path.exists(temp_name):
-            os.remove(temp_name)
-        raise
+        handle, temp_name = tempfile.mkstemp(dir=file_path.parent, prefix='.', suffix='.tmp')
+        try:
+            with os.fdopen(handle, 'wb') as temp_file:
+                temp_file.write(xml)
+            if file_path.exists():
+                os.chmod(temp_name, file_path.stat().st_mode)
+            else:
+                # mkstemp makes the file readable only by its owner
+                umask = os.umask(0)
+                os.umask(umask)
+                os.chmod(temp_name, 0o666 & ~umask)
+            os.replace(temp_name, file_path)
+        except BaseException:
+            Path(temp_name).unlink(missing_ok=True)
+            raise
+    except OSError as error:
+        raise SongFileError(str(error)) from error
 
 
-def new_song_path(folder: Path, title: str) -> Path:
+def song_file_name(title: str, folder: Path) -> Path:
     """
-    Returns a path in a folder for a new song, named after its title. Existing files are not overwritten.
+    Make a file name for a new song from its title, without overwriting an existing file
 
-    :param folder: The folder of the song
     :param title: The title of the song
+    :param folder: The folder of the new file
     """
-    name = _UNSAFE_FILE_NAME.sub('_', title).strip().strip('.').strip() or 'Song'
-    name = name[:100].strip()
+    name = _BAD_FILE_NAME_CHARS.sub('_', title).strip(' .') or 'song'
     file_path = folder / '{name}.xml'.format(name=name)
     number = 2
     while file_path.exists():

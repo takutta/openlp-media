@@ -24,17 +24,20 @@ Test writing OpenLyrics files without a database
 import os
 import stat
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from lxml import etree
 
-from openlp.plugins.song_folder.lib.songfile import FileSong, SongVerse, parse_song_file, parse_song_xml
-from openlp.plugins.song_folder.lib.songwriter import new_song_path, song_to_xml, write_song_file
+from openlp.plugins.song_folder.lib.songfile import FileSong, SongFileError, SongVerse, parse_song_file, \
+    parse_song_xml
+from openlp.plugins.song_folder.lib.songwriter import song_file_name, song_to_xml, write_song_file
+from openlp.plugins.songs.lib.openlyricsxml import NAMESPACE
 from tests.utils.constants import RESOURCE_PATH
 
 
 NS = '{http://openlyrics.info/namespace/2009/song}'
-ORIGINAL = b'''<?xml version="1.0" encoding="UTF-8"?>
+ORIGINAL_WITH_CHORDS = b'''<?xml version="1.0" encoding="UTF-8"?>
 <song xmlns="http://openlyrics.info/namespace/2009/song" version="0.9" createdIn="Other App 1.0"
       chordNotation="german">
   <properties>
@@ -72,14 +75,14 @@ def chords(settings):
 
 def test_round_trip_keeps_the_song(chords):
     """Writing a song and reading it again gives the same song"""
-    song = parse_song_xml(ORIGINAL)
+    song = parse_song_xml(ORIGINAL_WITH_CHORDS)
 
-    assert parse_song_xml(song_to_xml(song, ORIGINAL)) == song
+    assert parse_song_xml(song_to_xml(song, ORIGINAL_WITH_CHORDS)) == song
 
 
 def test_round_trip_without_original(chords):
     """A song can be written without an original file"""
-    song = parse_song_xml(ORIGINAL)
+    song = parse_song_xml(ORIGINAL_WITH_CHORDS)
 
     assert parse_song_xml(song_to_xml(song)) == song
 
@@ -87,11 +90,11 @@ def test_round_trip_without_original(chords):
 def test_unknown_parts_of_the_original_are_kept(chords):
     """What the editor does not know about is copied from the original file"""
     # GIVEN: A song read from a file, with a changed title
-    song = parse_song_xml(ORIGINAL)
+    song = parse_song_xml(ORIGINAL_WITH_CHORDS)
     song.titles[0] = 'New title'
 
     # WHEN: Writing it
-    xml = etree.fromstring(song_to_xml(song, ORIGINAL))
+    xml = etree.fromstring(song_to_xml(song, ORIGINAL_WITH_CHORDS))
 
     # THEN: The other properties, the formatting tags and the unknown elements are still there
     properties = xml.find(NS + 'properties')
@@ -111,11 +114,11 @@ def test_unknown_parts_of_the_original_are_kept(chords):
 
 def test_removed_properties_are_removed(settings):
     """A property that was cleared in the editor is not copied from the original"""
-    song = parse_song_xml(ORIGINAL)
+    song = parse_song_xml(ORIGINAL_WITH_CHORDS)
     song.topics = []
     song.songbooks = []
 
-    properties = etree.fromstring(song_to_xml(song, ORIGINAL)).find(NS + 'properties')
+    properties = etree.fromstring(song_to_xml(song, ORIGINAL_WITH_CHORDS)).find(NS + 'properties')
 
     assert properties.find(NS + 'themes') is None
     assert properties.find(NS + 'songbooks') is None
@@ -129,13 +132,6 @@ def test_original_without_namespace(settings):
     xml = etree.fromstring(song_to_xml(parse_song_xml(original), original))
 
     assert xml.find(NS + 'properties').find(NS + 'key').text == 'D'
-
-
-def test_broken_original_is_ignored(settings):
-    """The song is still written if the original file is not valid XML"""
-    song = FileSong(titles=['Song'], verses=[SongVerse('v', text='Line')])
-
-    assert parse_song_xml(song_to_xml(song, b'not xml')) == song
 
 
 def test_authors_of_both_words_and_music(settings):
@@ -179,46 +175,151 @@ def test_resource_files_survive_a_round_trip(settings, file_name):
     assert parse_song_xml(song_to_xml(song, original)) == song
 
 
+def make_song() -> FileSong:
+    return FileSong(titles=['Herra kaikkialla', 'Lord of all'],
+                    authors=[('Matti Meikäläinen', 'words+music'), ('Liisa Laine', 'translation'), ('Anon', '')],
+                    copyright='Public Domain', ccli_number='123', comments='Slowly\nQuietly',
+                    songbooks=[('Virsikirja', '12'), ('Notes', '')], topics=['Ylistys', 'Kiitos'],
+                    verse_order=['v1', 'c1', 'v1'],
+                    verses=[SongVerse('v', '1', text='First & line\nsecond [G]line'),
+                            SongVerse('c', '1', text='{r}Red\n[---]\nstill red{/r}'),
+                            SongVerse('v', '2', 'a', 'fi', text='Page one[--}{--]Page two')])
+
+
+def test_round_trip(settings):
+    """A written song reads back the same"""
+    settings.setValue('songs/enable chords', True)
+    song = make_song()
+
+    result = parse_song_xml(song_to_xml(song))
+
+    assert result.titles == song.titles
+    assert result.authors == song.authors
+    assert result.copyright == song.copyright
+    assert result.ccli_number == song.ccli_number
+    assert result.comments == song.comments
+    assert result.songbooks == song.songbooks
+    assert result.topics == song.topics
+    assert result.verse_order == song.verse_order
+    assert [(verse.name, verse.lang, verse.text) for verse in result.verses] == [
+        ('v1', None, 'First & line\nsecond [G]line'),
+        # Formatting tags are closed in each part and opened again in the next one
+        ('c1', None, '{r}Red{/r}\n[---]\n{r}still red{/r}'),
+        ('v2a', 'fi', 'Page one[--}{--]Page two')]
+
+
+def test_xml_structure(settings):
+    """The XML uses the OpenLyrics namespace, lists "words+music" authors twice and declares formatting tags"""
+    root = etree.fromstring(song_to_xml(make_song()))
+    ns = {'ol': NAMESPACE}
+
+    assert root.tag == '{{{ns}}}song'.format(ns=NAMESPACE)
+    assert root.get('version') == '0.9'
+    assert [(a.text, a.get('type')) for a in root.findall('ol:properties/ol:authors/ol:author', ns)][:2] == [
+        ('Matti Meikäläinen', 'words'), ('Matti Meikäläinen', 'music')]
+    assert root.find('ol:format/ol:tags/ol:tag[@name="r"]', ns) is not None
+    assert root.find('ol:lyrics/ol:verse/ol:lines/ol:chord', ns).get('name') == 'G'
+    # Every element is in the OpenLyrics namespace
+    assert all(element.tag.startswith('{' + NAMESPACE) for element in root.iter() if isinstance(element.tag, str))
+
+
+def test_lyrics_are_not_indented(settings):
+    """Other programs read whitespace in <lines> as text, so the lyrics are written without indentation"""
+    xml = song_to_xml(make_song()).decode()
+
+    assert '<lines>First &amp; line<br/>second <chord name="G"/>line</lines>' in xml
+
+
+ORIGINAL = '''<?xml version="1.0" encoding="UTF-8"?>
+<song xmlns="http://openlyrics.info/namespace/2009/song" version="0.8" createdIn="Other App">
+  <properties>
+    <titles><title>Old title</title></titles>
+    <copyright>Old</copyright>
+    <tempo type="bpm">90</tempo>
+    <key>G</key>
+    <publisher>Some Publisher</publisher>
+    <themes><theme>Old topic</theme></themes>
+  </properties>
+  <format><tags application="Other"><tag name="x"><open>&lt;b&gt;</open><close>&lt;/b&gt;</close></tag></tags></format>
+  <lyrics><verse name="v1"><lines>Old text</lines></verse></lyrics>
+</song>'''.encode()
+
+
+def test_unknown_fields_are_kept(settings):
+    """Saving a song again keeps the parts of the file that OpenLP does not edit"""
+    song = FileSong(titles=['New title'], verse_order=['v1'], verses=[SongVerse('v', '1', text='{r}New{/r} text')],
+                    authors=[('Writer', '')])
+
+    root = etree.fromstring(song_to_xml(song, ORIGINAL))
+    ns = {'ol': NAMESPACE}
+    properties = [etree.QName(child).localname for child in root.find('ol:properties', ns)]
+
+    # The edited fields are replaced, removed or added in the order of the schema, the others are kept
+    assert properties == ['titles', 'authors', 'tempo', 'key', 'publisher', 'verseOrder']
+    assert root.find('ol:properties/ol:tempo', ns).text == '90'
+    assert root.find('ol:properties/ol:titles/ol:title', ns).text == 'New title'
+    assert root.get('createdIn') == 'Other App'
+    assert root.get('modifiedIn').startswith('OpenLP')
+    # The formatting tags of the file are kept and the new ones are added
+    assert [tag.get('name') for tag in root.findall('ol:format/ol:tags/ol:tag', ns)] == ['x', 'r']
+    assert parse_song_xml(etree.tostring(root)).verses[0].text == '{r}New{/r} text'
+
+
+def test_original_which_is_not_a_song(settings):
+    """A file which is not an OpenLyrics song, or not XML at all, is written from scratch"""
+    song = FileSong(titles=['Title'], verses=[SongVerse('v', '1', text='Text')])
+
+    assert parse_song_xml(song_to_xml(song, b'<html/>')).title == 'Title'
+    assert parse_song_xml(song_to_xml(song, b'not xml')).title == 'Title'
+
+
 def test_write_song_file(settings, temp_folder):
-    """The file is written and no temporary file is left behind"""
+    """The file is written, and no temporary files are left behind"""
+    folder = Path(temp_folder)
+    file_path = folder / 'song.xml'
+    file_path.write_bytes(ORIGINAL)
+
+    write_song_file(make_song(), file_path)
+
+    assert parse_song_file(file_path).title == 'Herra kaikkialla'
+    assert b'<tempo' in file_path.read_bytes()
+    assert [path.name for path in folder.iterdir()] == ['song.xml']
+
+
+def test_write_song_file_failure_keeps_old_file(settings, temp_folder):
+    """When writing fails, the old file stays as it was"""
     file_path = Path(temp_folder) / 'song.xml'
     file_path.write_bytes(ORIGINAL)
-    os.chmod(file_path, 0o640)
-    song = parse_song_xml(ORIGINAL)
-    song.titles[0] = 'Changed'
 
-    write_song_file(song, file_path, ORIGINAL)
-
-    assert parse_song_file(file_path).title == 'Changed'
-    assert os.listdir(temp_folder) == ['song.xml']
-    assert stat.S_IMODE(file_path.stat().st_mode) == 0o640
-
-
-def test_write_song_file_failure_keeps_the_old_file(settings, temp_folder):
-    """A failed write leaves the old file as it was"""
-    file_path = Path(temp_folder) / 'song.xml'
-    file_path.write_bytes(ORIGINAL)
-    song = parse_song_xml(ORIGINAL)
-
-    with pytest.raises(OSError):
-        write_song_file(song, Path(temp_folder) / 'missing' / 'song.xml')
+    with patch('openlp.plugins.song_folder.lib.songwriter.os.replace', side_effect=OSError('disk full')):
+        with pytest.raises(SongFileError):
+            write_song_file(make_song(), file_path)
 
     assert file_path.read_bytes() == ORIGINAL
-    assert os.listdir(temp_folder) == ['song.xml']
+    assert [path.name for path in Path(temp_folder).iterdir()] == ['song.xml']
 
 
-@pytest.mark.parametrize('title, expected', [('Amazing Grace', 'Amazing Grace.xml'),
-                                             ('What? / Why: "now"', 'What_ _ Why_ _now_.xml'),
-                                             ('...', 'Song.xml'),
-                                             ('', 'Song.xml')])
-def test_new_song_path(temp_folder, title, expected):
-    """The file name comes from the title, without characters that are not allowed in file names"""
-    assert new_song_path(Path(temp_folder), title) == Path(temp_folder) / expected
+def test_song_file_name(temp_folder):
+    """New file names come from the title, without overwriting files"""
+    folder = Path(temp_folder)
+    assert song_file_name('Herra: kaikkialla?', folder) == folder / 'Herra_ kaikkialla_.xml'
+    assert song_file_name(' ... ', folder) == folder / 'song.xml'
+    (folder / 'Song.xml').write_text('')
+    (folder / 'Song (2).xml').write_text('')
+    assert song_file_name('Song', folder) == folder / 'Song (3).xml'
 
 
-def test_new_song_path_does_not_overwrite(temp_folder):
-    """A number is added if the file exists already"""
-    (Path(temp_folder) / 'Song.xml').write_text('')
-    (Path(temp_folder) / 'Song (2).xml').write_text('')
+def test_new_file_permissions(settings, temp_folder):
+    """A new file can be read by others like any other new file, an existing file keeps its permissions"""
+    file_path = Path(temp_folder) / 'song.xml'
+    umask = os.umask(0o022)
+    try:
+        write_song_file(FileSong(titles=['Song'], verses=[SongVerse('v', text='Line')]), file_path)
+    finally:
+        os.umask(umask)
+    assert stat.S_IMODE(file_path.stat().st_mode) == 0o644
+    os.chmod(file_path, 0o640)
 
-    assert new_song_path(Path(temp_folder), 'Song') == Path(temp_folder) / 'Song (3).xml'
+    write_song_file(FileSong(titles=['Song'], verses=[SongVerse('v', text='Changed')]), file_path)
+
+    assert stat.S_IMODE(file_path.stat().st_mode) == 0o640

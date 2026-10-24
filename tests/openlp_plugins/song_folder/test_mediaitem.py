@@ -30,7 +30,7 @@ from PySide6 import QtCore, QtWidgets
 from openlp.core.common.actions import ActionList
 from openlp.core.lib.serviceitem import ItemCapabilities, ServiceItem
 from openlp.plugins.song_folder.lib.mediaitem import SongFolderMediaItem
-from openlp.plugins.song_folder.lib.songfile import FileSong, SongVerse, parse_song_file
+from openlp.plugins.song_folder.lib.songfile import FileSong, SongFileError, SongVerse, parse_song_file
 from openlp.plugins.songs.songsplugin import song_footer
 
 
@@ -237,6 +237,18 @@ def test_service_load_sets_edit_id(media_item, song_root):
     assert service_item.edit_id == str(song_root / 'b-song.xml')
 
 
+def test_service_load_missing_file_cannot_be_edited(media_item, song_root):
+    """A song whose file is gone cannot be edited"""
+    service_item = ServiceItem(None)
+    service_item.add_capability(ItemCapabilities.CanEdit)
+    service_item.data_string = {'file path': str(song_root / 'gone.xml')}
+
+    media_item.service_load(service_item)
+
+    assert not service_item.is_capable(ItemCapabilities.CanEdit)
+    assert service_item.edit_id is None
+
+
 def mock_editor(media_item, song=None, accepted=True):
     """Replace the song editor with one that returns a song"""
     form = MagicMock()
@@ -259,6 +271,16 @@ def test_on_new_click_writes_song_into_selected_folder(media_item, song_root):
     assert parse_song_file(new_path).title == 'New: song'
     assert find_item(media_item, new_path).isSelected()
     assert find_item(media_item, new_path).text(0) == 'New: song'
+
+
+def test_on_new_click_cancelled(media_item, song_root):
+    """Nothing is written if the editor is cancelled"""
+    files = sorted(song_root.rglob('*'))
+    mock_editor(media_item, accepted=False)
+
+    media_item.on_new_click()
+
+    assert sorted(song_root.rglob('*')) == files
 
 
 @patch('openlp.plugins.filesystem_library.libraryitem.critical_error_message_box')
@@ -350,7 +372,7 @@ def test_edit_song_file_broken(mocked_error, media_item, song_root):
 @patch('openlp.plugins.song_folder.lib.mediaitem.write_song_file')
 def test_edit_song_file_write_error_reopens_editor(mocked_write, mocked_error, media_item, song_root):
     """If the song cannot be saved, the editor is shown again with the song"""
-    mocked_write.side_effect = [OSError('disk full'), None]
+    mocked_write.side_effect = [SongFileError('disk full'), None]
     form = mock_editor(media_item)
 
     assert media_item.edit_song_file(song_root / 'b-song.xml') == song_root / 'b-song.xml'

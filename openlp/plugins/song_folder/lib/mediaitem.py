@@ -36,7 +36,7 @@ from openlp.plugins.filesystem_library.libraryitem import FileSystemLibraryItem,
 from openlp.plugins.song_folder.forms.editsongform import SongFileEditForm
 from openlp.plugins.song_folder.lib.songfile import FORCED_SPLIT, FileSong, SongFileError, parse_song_xml
 from openlp.plugins.song_folder.lib.songindex import SongIndex
-from openlp.plugins.song_folder.lib.songwriter import new_song_path, write_song_file
+from openlp.plugins.song_folder.lib.songwriter import song_file_name, write_song_file
 from openlp.plugins.songs.lib import VerseType
 from openlp.plugins.songs.lib.db import AuthorType
 from openlp.plugins.songs.lib.ui import SongStrings
@@ -348,8 +348,11 @@ class SongFolderMediaItem(FileSystemLibraryItem):
         """
         item.icon = UiIcons().music
         # The edit id is not saved in service files, but the path of the song is
-        if isinstance(item.data_string, dict) and item.data_string.get('file path'):
-            item.edit_id = item.data_string['file path']
+        file_path = item.data_string.get('file path') if isinstance(item.data_string, dict) else None
+        if file_path and Path(file_path).is_file():
+            item.edit_id = file_path
+        elif item.is_capable(ItemCapabilities.CanEdit):
+            item.remove_capability(ItemCapabilities.CanEdit)
         return item
 
     # Editing
@@ -419,12 +422,12 @@ class SongFolderMediaItem(FileSystemLibraryItem):
         self.edit_song_form.load_song(song)
         while self.edit_song_form.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             song = self.edit_song_form.song
-            target_path = file_path or new_song_path(self.current_folder, song.title)
+            target_path = file_path or song_file_name(song.title, self.current_folder)
             if file_path and not self._can_overwrite(file_path, original):
                 return None
             try:
-                write_song_file(song, target_path, original)
-            except OSError as error:
+                write_song_file(song, target_path, keep_contents=file_path is not None)
+            except SongFileError as error:
                 # The form keeps the song, so that nothing is lost
                 critical_error_message_box(message=translate('SongFolderPlugin.MediaItem',
                                                              'Could not save the song: {error}').format(error=error))
