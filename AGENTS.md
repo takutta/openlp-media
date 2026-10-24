@@ -111,3 +111,11 @@ pluginin omassa hakemistossa, ei ytimessä.
 2. Lauluplugin. Ehdotus: OpenLyrics-XML-tiedostot kansiossa. Nykyinen `OpenLyrics.xml_to_song` on sidottu
    tietokantaan (`self.manager`), joten tarvitaan kevyt jäsennin, joka ei käytä tietokantaa. Muokkausnäkymä
    (`editsongform.py`) on myös tietokantasidonnainen.
+   - Totuus on aina `.xml`-tiedostoissa. Tietokantaa ei käytetä tallennukseen.
+   - Haku (sanat, otsikko, tekijä, aihe, CCLI, kirja ja numero) tarvitsee indeksin. Indeksi on pelkkä välimuisti
+     (muistissa tai heitettävä SQLite pluginin datakansiossa). Sen voi poistaa ja rakentaa uudelleen milloin
+     tahansa, eikä sitä varmuuskopioida eikä synkronoida.
+   - Indeksiä päivitetään samalla `QFileSystemWatcher`-mekanismilla kuin puuta: vain muuttuneet tiedostot
+     jäsennetään uudelleen (vertailu esim. muokkausajan ja koon perusteella).
+   - Tavoite: kirjaston voi kopioida, synkronoida (Syncthing, Nextcloud, verkkolevy) tai muokata OpenLP:n
+     ulkopuolella, eikä mikään mene ristiin.
