@@ -88,8 +88,8 @@ class SongFolderPlugin(Plugin):
         tooltips = {
             'load': translate('SongFolderPlugin', 'Copy OpenLyrics files into the folder.'),
             'import': '',
-            'new': '',
-            'edit': '',
+            'new': translate('SongFolderPlugin', 'Add a new song.'),
+            'edit': translate('SongFolderPlugin', 'Edit the selected song.'),
             'delete': translate('SongFolderPlugin', 'Move the selected songs to the trash.'),
             'preview': translate('SongFolderPlugin', 'Preview the selected song.'),
             'live': translate('SongFolderPlugin', 'Send the selected song live.'),

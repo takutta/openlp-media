@@ -30,6 +30,7 @@ from PySide6 import QtCore, QtWidgets
 from openlp.core.common.actions import ActionList
 from openlp.core.lib.serviceitem import ItemCapabilities, ServiceItem
 from openlp.plugins.song_folder.lib.mediaitem import SongFolderMediaItem
+from openlp.plugins.song_folder.lib.songfile import SongFileError
 from openlp.plugins.songs.songsplugin import song_footer
 
 
@@ -214,3 +215,106 @@ def test_delete_item_forgets_song(media_item, song_root):
     media_item.delete_item(song_root / 'b-song.xml')
 
     assert song_root / 'b-song.xml' not in media_item.index
+
+
+def test_generate_slide_data_can_edit(media_item, song_root):
+    """The service item can be edited, and remembers its file"""
+    service_item = ServiceItem(media_item.plugin)
+    media_item.generate_slide_data(service_item, item=find_item(media_item, song_root / 'b-song.xml'))
+
+    assert service_item.is_capable(ItemCapabilities.CanEdit)
+    assert service_item.edit_id == str(song_root / 'b-song.xml')
+
+
+def test_service_load_restores_edit_id(media_item, song_root):
+    """A song loaded from a service file can be edited if its file still exists"""
+    service_item = ServiceItem(None)
+    service_item.add_capability(ItemCapabilities.CanEdit)
+    service_item.data_string = {'file path': str(song_root / 'b-song.xml')}
+    media_item.service_load(service_item)
+    assert service_item.edit_id == str(song_root / 'b-song.xml')
+
+    service_item = ServiceItem(None)
+    service_item.add_capability(ItemCapabilities.CanEdit)
+    service_item.data_string = {'file path': str(song_root / 'gone.xml')}
+    media_item.service_load(service_item)
+    assert not service_item.is_capable(ItemCapabilities.CanEdit)
+
+
+def accept_form(media_item, change):
+    """Make the edit form change the song and return Accepted instead of showing it"""
+    def exec_form():
+        change(media_item.edit_song_form)
+        return QtWidgets.QDialog.DialogCode.Accepted
+    media_item.edit_song_form.exec = exec_form
+
+
+def test_on_new_click_creates_file(media_item, song_root):
+    """A new song is saved to a new file in the selected folder"""
+    find_item(media_item, song_root / 'Hymns').setSelected(True)
+
+    def change(form):
+        form.title_edit.setText('Uusi: laulu')
+        form.lyrics_edit.setPlainText('---[Verse:1]---\nUusi säe')
+    accept_form(media_item, change)
+
+    media_item.on_new_click()
+
+    file_path = song_root / 'Hymns' / 'Uusi_ laulu.xml'
+    assert media_item.index.get(file_path).verses[0].text == 'Uusi säe'
+    assert find_item(media_item, file_path).isSelected()
+
+
+def test_on_new_click_cancelled(media_item, song_root):
+    """Nothing is written when the form is cancelled"""
+    media_item.edit_song_form.exec = lambda: QtWidgets.QDialog.DialogCode.Rejected
+    files = sorted(song_root.rglob('*'))
+
+    media_item.on_new_click()
+
+    assert sorted(song_root.rglob('*')) == files
+
+
+def test_on_edit_click_saves_and_updates_service(media_item, song_root):
+    """Editing saves to the same file and updates the copies of the song in the service"""
+    file_path = song_root / 'b-song.xml'
+    tree_item = find_item(media_item, file_path)
+    media_item.list_view.setCurrentItem(tree_item)
+    old_item = ServiceItem(media_item.plugin)
+    old_item.edit_id = str(file_path)
+    media_item.service_manager.service_items = [{'service_item': old_item}]
+    accept_form(media_item, lambda form: form.title_edit.setText('Beta (edited)'))
+
+    media_item.on_edit_click()
+
+    assert media_item.index.get(file_path).title == 'Beta (edited)'
+    assert b'<tempo' not in file_path.read_bytes()
+    new_item = media_item.service_manager.replace_service_item.call_args.args[0]
+    assert new_item.title == 'Beta (edited)'
+
+
+@patch('openlp.plugins.song_folder.lib.mediaitem.critical_error_message_box')
+def test_edit_broken_file_shows_error(mocked_error, media_item, song_root):
+    """A file which cannot be read cannot be edited"""
+    assert media_item.edit_song_file(song_root / 'Hymns' / 'broken.xml') is False
+    mocked_error.assert_called_once()
+
+
+def test_on_remote_edit(media_item, song_root):
+    """Editing from the service returns the new service item"""
+    accept_form(media_item, lambda form: form.title_edit.setText('Remote edit'))
+
+    item = media_item.on_remote_edit(str(song_root / 'b-song.xml'), preview=True)
+
+    assert item.title == 'Remote edit'
+    assert item.from_plugin is True
+
+
+@patch('openlp.plugins.song_folder.lib.mediaitem.write_song_file', side_effect=SongFileError('read-only'))
+@patch('openlp.plugins.song_folder.lib.mediaitem.critical_error_message_box')
+def test_save_failure_shows_error(mocked_error, mocked_write, media_item, song_root):
+    """A song which cannot be saved shows an error"""
+    accept_form(media_item, lambda form: None)
+
+    assert media_item.edit_song_file(song_root / 'b-song.xml') is False
+    mocked_error.assert_called_once()
