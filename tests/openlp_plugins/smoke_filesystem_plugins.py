@@ -46,6 +46,9 @@ library = work / 'library'
 (library / 'images' / 'Easter').mkdir(parents=True)
 (library / 'presentations').mkdir(parents=True)
 (library / 'media').mkdir(parents=True)
+(library / 'songs').mkdir(parents=True)
+shutil.copy(repo / 'tests/resources/songs/openlyrics/What a friend we have in Jesus.xml',
+            library / 'songs' / 'friend.xml')
 shutil.copy(repo / 'tests/resources/presentations/pdf_test1.pdf', library / 'presentations' / 'welcome.pdf')
 (work / 'portable' / 'Data').mkdir(parents=True)
 
@@ -63,7 +66,7 @@ settings.setValue('core/show splash', False)
 settings.setValue('core/application version', get_version()['version'])
 settings.setValue('core/language', 'fi')
 for name, folder in (('image_folder', 'images'), ('presentation_folder', 'presentations'),
-                     ('media_folder', 'media')):
+                     ('media_folder', 'media'), ('song_folder', 'songs')):
     settings.setValue(f'{name}/status', 1)
     settings.setValue(f'{name}/root folder', library / folder)
 settings.sync()
@@ -104,10 +107,11 @@ def find_item(media_item, path):
 
 def exercise():
     from openlp.core.common.registry import Registry
+    from openlp.core.lib.serviceitem import ItemCapabilities
     try:
         pm = Registry().get('plugin_manager')
         plugins = {name: pm.get_plugin_by_name(name) for name in ('image_folder', 'presentation_folder',
-                                                                  'media_folder')}
+                                                                  'media_folder', 'song_folder')}
         for name, plugin in plugins.items():
             check(f'{name} active with media item', plugin and plugin.is_active() and plugin.media_item)
         if (repo / 'openlp' / 'plugins' / 'image_folder' / 'i18n' / 'fi.qm').exists():
@@ -147,6 +151,25 @@ def exercise():
         wait(1)
         check('pdf live as images', live.service_item and live.service_item.is_image()
               and len(live.service_item.slides) == 3)
+        # Songs are added to the service and edited with the real song editor
+        songs = plugins['song_folder'].media_item
+        song_path = library / 'songs' / 'friend.xml'
+        songs.add_to_service(find_item(songs, song_path))
+        check('song added to service', len(service_manager.service_items) == 3)
+        song_item = service_manager.service_items[2]['service_item']
+        check('song can be edited', song_item.is_capable(ItemCapabilities.CanEdit) and
+              song_item.edit_id == str(song_path))
+
+        def edit_title():
+            songs.edit_song_form.title_edit.setText('Edited friend')
+            songs.edit_song_form.accept()
+            return QtWidgets.QDialog.DialogCode.Accepted
+        songs.edit_song_form.exec = edit_title
+        service_manager.add_service_item(songs.on_remote_edit(song_item.edit_id), replace=2)
+        check('song edited in service', service_manager.service_items[2]['service_item'].title == 'Edited friend')
+        check('song file written', b'Edited friend' in song_path.read_bytes() and
+              b'<ccliNo>27714</ccliNo>' in song_path.read_bytes())
+        check('song renamed in library', find_item(songs, song_path).text(0) == 'Edited friend')
         # Save and load the service
         service_file = work / 'test.osz'
         service_manager.set_file_name(service_file)
@@ -156,7 +179,9 @@ def exercise():
         service_manager.load_file(service_file)
         wait(1)
         items = [item['service_item'] for item in service_manager.service_items]
-        check('service loaded', [item.name for item in items] == ['image_folder', 'presentation_folder'])
+        check('service loaded', [item.name for item in items] == ['image_folder', 'presentation_folder',
+                                                                  'song_folder'])
+        check('song editable after load', items[2].edit_id == str(song_path))
         check('icons after load', all(item.icon is not None and not item.icon.isNull() for item in items))
         thumbnail = Path(items[1].slides[0]['image'])
         check(f'pdf thumbnails after load ({thumbnail})', thumbnail.is_absolute() and thumbnail.exists())
@@ -186,8 +211,22 @@ from openlp.core import app as app_module  # noqa: E402
 original_run = app_module.OpenLP.run
 
 
+def start_when_ready():
+    """
+    Start the checks once the plugins have been set up. The start up takes a while on a cold or slow machine.
+    """
+    from openlp.core.common.registry import Registry
+    services = getattr(Registry(), 'service_list', {})
+    plugin = services['plugin_manager'].get_plugin_by_name('song_folder') if 'plugin_manager' in services else None
+    if plugin and plugin.media_item and 'service_manager' in services:
+        # Let the main window finish what it is doing
+        QtCore.QTimer.singleShot(1000, exercise)
+    else:
+        QtCore.QTimer.singleShot(500, start_when_ready)
+
+
 def run(self, args, application):
-    QtCore.QTimer.singleShot(3000, exercise)
+    QtCore.QTimer.singleShot(500, start_when_ready)
     return original_run(self, args, application)
 
 

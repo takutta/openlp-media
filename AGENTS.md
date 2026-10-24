@@ -20,7 +20,7 @@ suoraa tiedostopolkua tietokannan sijaan: valittu kansio levyllä *on* kirjasto.
 | `media_folder` (Mediakansio) | Valmis ja testattu, käynnistyy oikeassa sovelluksessa (smoke-testi) |
 | `image_folder` (Kuvakansio) | Valmis ja testattu, smoke-testi ok |
 | `presentation_folder` (Presentaatiokansio) | Valmis ja testattu PDF:llä. LibreOffice/PowerPoint vain mock-testeillä |
-| `song_folder` (Laulukansio) | Toimii ja testattu, kokeiltu oikeassa GUI:ssa (Xvfb). Ei muokkausnäkymää |
+| `song_folder` (Laulukansio) | Valmis ja testattu, muokkausnäkymä ja uusi laulu mukana. Smoke-testi ok |
 
 Smoke-testi ajettiin offscreen-tilassa (ei oikeaa näyttöä). Kaikki pitää vielä kokeilla oikeassa GUI:ssa.
 
@@ -59,6 +59,7 @@ piilotetut ohitetaan). Kuva- ja lauluplugin voivat käyttää samaa luokkaa.
   voi näyttää muita levyn tiedostoja.
 - Remote-API hakee signaalit nimillä `<pluginin nimi>_go_live` ja `<pluginin nimi>_add_to_service`. Ne pitää
   määritellä aliluokassa juuri näillä nimillä (esim. `image_folder_go_live`), muuten remote-komennot kaatuvat.
+- Jos aliluokka asettaa `has_edit_icon`-arvon, kontekstivalikkoon tulee "Muokkaa" (`on_edit_click`).
 - `_get_tree_item(item)` muuntaa `generate_slide_data()`:lle annetun arvon (None / `QModelIndex` / item) puun
   itemiksi.
 - Luokka rekisteröi itse oletusasetukset (`root folder`, `last directory` ja listanäkymän pikanäppäimet
@@ -147,18 +148,49 @@ tietokantaa ei ole.
   - Remote-API:n haku (`search()`) käyttää indeksiä ja palauttaa tiedostopolun id:nä.
 - Plugin rekisteröi `song_folder/status`-oletusasetuksen ja songs-pluginin `song_footer`-oletuksen, joten
   alatunniste toimii, vaikka songs-plugin olisi pois päältä.
+- `lib/songwriter.py`: `song_to_xml(laulu, alkuperäinen)` ja `write_song_file()` kirjoittavat `FileSong`-olion
+  OpenLyrics-tiedostoksi. XML tehdään songs-pluginin `OpenLyrics.song_to_xml`-funktiolla, jolle annetaan
+  `SimpleNamespace`-olio tietokannan `Song`-olion tilalle.
+  - Alkuperäisestä tiedostosta säilyvät kaikki ominaisuudet, joita lomake ei tunne (`tempo`, `key`, `publisher`,
+    `version` jne.), `<format>`-tagimäärittelyt (myös käyttämättömät), kolmas ja sitä myöhemmät otsikot, `<song>`-
+    elementin attribuutit (`createdIn`, `chordNotation`…) ja vieraat elementit. Tiedostot ilman OpenLyrics-
+    nimiavaruutta siirretään nimiavaruuteen. Säkeiden omat attribuutit (`lang`-attribuuttia lukuun ottamatta) ja
+    tekijän `lang` katoavat.
+  - Tiedosto kirjoitetaan piilotettuun väliaikaistiedostoon ja vaihdetaan paikalleen (`os.replace`), joten
+    epäonnistunut tallennus ei riko vanhaa tiedostoa. Tiedoston oikeudet säilyvät.
+  - `new_song_path(kansio, otsikko)` antaa uudelle laululle nimen otsikosta. Kiellettyjen merkkien tilalle tulee `_`,
+    eikä mitään ylikirjoiteta (lisätään ` (2)`).
+  - Testi `test_resource_files_survive_a_round_trip` varmistaa, että songs-pluginin OpenLyrics-testitiedostot
+    säilyvät samoina, kun ne kirjoitetaan uudelleen.
+- `forms/editsongform.py`: `SongFileEditForm` on oma, kevyempi lomake (vanha on tietokantasidonnainen).
+  - Sanat muokataan yhtenä tekstinä, jossa jokaisen säkeen alussa on rivi `---[Säe:1]---`. Muoto on sama kuin
+    songs-pluginin "Muokkaa kaikkia" -näkymässä. Muodot `---[Kertosäe:1:en]---` (kieli) ja `---[Säe:1a]---` (osa)
+    toimivat myös. Säetyypin voi kirjoittaa suomeksi, englanniksi tai lyhenteenä. Ensimmäistä merkintää edeltävä
+    teksti on säe 1. Samannimiset säkeet yhdistetään kuten luettaessa.
+  - Säejärjestys näytetään käännetyillä tunnuksilla (`S1 K1`) ja luetaan sekä käännetyillä että englanninkielisillä.
+  - Tekijät on listassa tyyppeineen. Aiheet ja laulukirjat (`Kirja #12`) kirjoitetaan yksi riville.
+  - Tekstit ovat songs-pluginin konteksteista (`SongsPlugin.EditSongForm` jne.), joten suurin osa suomennoksesta
+    tulee ytimestä.
+- Muokkaus mediaitemissä:
+  - "Uusi" kirjoittaa laulun valittuun kansioon ja "Muokkaa" (myös kontekstivalikossa) valittuun tiedostoon.
+    Muokattu laulu päivitetään myös Listaan (`replace_service_item`) aina, toisin kuin songs-pluginissa, jossa
+    se riippuu `songs/update service on edit` -asetuksesta.
+  - Palvelukohteella on `CanEdit`, ja `edit_id` on tiedostopolku. Tällöin Listan ja esikatselun "Muokkaa" toimivat
+    (`on_remote_edit`). `edit_id` ei tallennu listatiedostoon, joten `service_load()` palauttaa sen
+    `data_string['file path']`-arvosta.
+  - Jos tiedosto muuttuu levyllä muokkauksen aikana, ohjelma kysyy ennen ylikirjoitusta. Jos tallennus epäonnistuu,
+    lomake avautuu uudelleen sisältö tallessa. Tallennuksen jälkeen indeksistä poistetaan tiedoston vanha tieto,
+    koska koko ja aikaleima voivat olla samat.
 - Puuttuu vielä:
-  - Muokkausnäkymä. `editsongform.py` on tietokantasidonnainen, joten tarvitaan oma lomake, joka kirjoittaa
-    OpenLyrics-tiedoston (ehkä songs-pluginin `OpenLyrics.song_to_xml`-logiikalla ilman tietokantaa).
-  - Uusi laulu, taustamusiikki (`HasBackgroundAudio`), ensimmäisen sliden tila ja isot kirjaimet.
+  - Taustamusiikki (`HasBackgroundAudio`), ensimmäisen sliden tila ja isot kirjaimet.
   - Remote-API:n transponointi (`/api/v2/plugins/songs/transpose-live-item`) ei toimi, koska ydin tarkistaa
     nimen (`name != 'songs'`). Sama tilanne kuin media_folderin play/pause-kutsuissa.
 
 ### Vanhat pluginit pitää säilyttää asennettuina
 
 Uudet pluginit eivät tarvitse vanhoja aktiivisiksi, mutta niiden pitää olla asennettuina:
-`presentation_folder`, `image_folder` ja `song_folder` tuovat niistä koodia. Lisäksi ytimen `ServiceItem.validate_item()` ja
-slidecontroller tarkistavat State-nimen `media`, jonka vanha media-plugin rekisteröi myös pois päältä ollessaan.
+`presentation_folder`, `image_folder` ja `song_folder` tuovat niistä koodia. Lisäksi ytimen
+`ServiceItem.validate_item()` ja slidecontroller tarkistavat State-nimen `media`, jonka vanha media-plugin rekisteröi myös pois päältä ollessaan.
 Ilman sitä `media_folder`-kohteet merkitään listassa virheellisiksi.
 
 ### Suomennokset: `openlp/plugins/*/i18n/fi.ts`
@@ -170,7 +202,10 @@ Ilman sitä `media_folder`-kohteet merkitään listassa virheellisiksi.
   `MediaPlugin.MediaItem`-tekstit.
 - `song_folder/i18n/fi.ts`: kontekstit `SongFolderPlugin`, `SongFolderPlugin.MediaItem` sekä alatunnisteen
   `OpenLP.Ui`- ja `SongsPlugin.MediaItem`-tekstit. Tekijätyyppien nimet (`SongsPlugin.AuthorType`) tulevat ytimen
-  suomennoksesta.
+  suomennoksesta. Lomakkeen käyttämät `SongsPlugin.EditSongForm`-tekstit on kopioitu ytimen suomennoksesta.
+  `SongsPlugin.EditVerseForm` ("Pakotettu jako") on lisätty käsin, koska se puuttuu ytimestä eikä lupdate löydä
+  `UiStrings`-tekstejä. lupdate merkitsee käsin lisätyt viestit vanhentuneiksi (`vanished`), joten tarkista ne
+  päivityksen jälkeen.
 - `image_folder/i18n/fi.ts`: `ImageFolderPlugin`, käytetyt `ImagePlugin.MediaItem`-tekstit sekä käsin lisätty
   `ImagesPlugin.ImageTab`, joka puuttuu ytimen suomennoksesta.
 - `presentation_folder/i18n/fi.ts`: `PresentationFolderPlugin` ja käytetyt `PresentationPlugin.MediaItem`-tekstit.
@@ -198,8 +233,9 @@ uv run python run_openlp.py
 - Testit: `tests/openlp_plugins/{filesystem_library,media_folder,image_folder,presentation_folder,song_folder}/`.
   Esitystestit käyttävät oikeaa PDF-ohjainta (QtPdf) ja valeohjainta muille muodoille. Valeohjain ei saa periä
   `PresentationController`-luokkaa, koska pluginit etsivät ohjaimet `__subclasses__()`-kutsulla.
-- Smoke-testi oikealla sovelluksella: käynnistää OpenLP:n portable-tilassa kolmella pluginilla, lisää kuvia ja PDF:n
-  Listaan ja Esitykseen, tallentaa ja avaa listan, sekä kokeilee remote-haun ja -liven. Tulostaa `SMOKE RESULT`:
+- Smoke-testi oikealla sovelluksella: käynnistää OpenLP:n portable-tilassa neljällä pluginilla, lisää kuvia, PDF:n
+  ja laulun Listaan, muokkaa laulua oikealla lomakkeella, tallentaa ja avaa listan, sekä kokeilee remote-haun ja
+  -liven. Tarkistukset alkavat, kun pluginit ovat valmiina. Tulostaa `SMOKE RESULT`:
   ```
   QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--no-sandbox \\
       uv run python tests/openlp_plugins/smoke_filesystem_plugins.py <tyhjä työkansio>

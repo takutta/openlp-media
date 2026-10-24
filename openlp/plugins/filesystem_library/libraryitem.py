@@ -179,6 +179,10 @@ class FileSystemLibraryItem(MediaManagerItem):
         self.list_view.allow_internal_dnd = True
         self.page_layout.addWidget(self.list_view)
         self.list_view.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        if self.has_edit_icon:
+            create_widget_action(self.list_view, text=self.plugin.get_string(StringContent.Edit)['title'],
+                                 icon=UiIcons().edit, triggers=self.on_edit_click)
+            create_widget_action(self.list_view, separator=True)
         if self.can_preview:
             create_widget_action(
                 self.list_view,

@@ -28,13 +28,15 @@ import mako.template
 from PySide6 import QtCore, QtWidgets
 
 from openlp.core.common.i18n import UiStrings, translate
-from openlp.core.lib import ServiceItemContext, create_separated_list
+from openlp.core.lib import ServiceItemContext, check_item_selected, create_separated_list
 from openlp.core.lib.serviceitem import ItemCapabilities
 from openlp.core.lib.ui import critical_error_message_box
 from openlp.core.ui.icons import UiIcons
 from openlp.plugins.filesystem_library.libraryitem import FileSystemLibraryItem, ItemType, ItemTypeRole
-from openlp.plugins.song_folder.lib.songfile import FORCED_SPLIT, FileSong
+from openlp.plugins.song_folder.forms.editsongform import SongFileEditForm
+from openlp.plugins.song_folder.lib.songfile import FORCED_SPLIT, FileSong, SongFileError, parse_song_xml
 from openlp.plugins.song_folder.lib.songindex import SongIndex
+from openlp.plugins.song_folder.lib.songwriter import new_song_path, write_song_file
 from openlp.plugins.songs.lib import VerseType
 from openlp.plugins.songs.lib.db import AuthorType
 from openlp.plugins.songs.lib.ui import SongStrings
@@ -70,7 +72,25 @@ class SongFolderMediaItem(FileSystemLibraryItem):
 
     def __init__(self, parent, plugin):
         self.index = SongIndex()
+        self._edit_song_form = None
         super().__init__(parent, plugin)
+
+    @property
+    def edit_song_form(self) -> SongFileEditForm:
+        """
+        The song editor, created when it is first needed
+        """
+        if self._edit_song_form is None:
+            self._edit_song_form = SongFileEditForm(self.main_window)
+        return self._edit_song_form
+
+    def required_icons(self):
+        """
+        Songs can be created and edited
+        """
+        super().required_icons()
+        self.has_new_icon = True
+        self.has_edit_icon = True
 
     def retranslate_ui(self):
         """
@@ -242,7 +262,9 @@ class SongFolderMediaItem(FileSystemLibraryItem):
         service_item.add_capability(ItemCapabilities.CanPreview)
         service_item.add_capability(ItemCapabilities.CanLoop)
         service_item.add_capability(ItemCapabilities.CanSoftBreak)
+        service_item.add_capability(ItemCapabilities.CanEdit)
         service_item.add_capability(ItemCapabilities.OnLoadUpdate)
+        service_item.edit_id = str(file_path)
         for verse in song.ordered_verses():
             verse_def = '{tag}{number}'.format(tag=VerseType.translated_tag(verse.tag), number=verse.number)
             for page in FORCED_SPLIT.split(verse.text):
@@ -325,4 +347,106 @@ class SongFolderMediaItem(FileSystemLibraryItem):
         :param item: The service item that was loaded
         """
         item.icon = UiIcons().music
+        # The edit id is not saved in service files, but the path of the song is
+        if isinstance(item.data_string, dict) and item.data_string.get('file path'):
+            item.edit_id = item.data_string['file path']
         return item
+
+    # Editing
+
+    def on_new_click(self):
+        """
+        Write a new song into the selected folder
+        """
+        if self._require_root():
+            self.edit_song_file(None)
+
+    def on_edit_click(self):
+        """
+        Edit the selected song. The song is updated in the service too.
+        """
+        if not check_item_selected(self.list_view, UiStrings().SelectEdit):
+            return
+        tree_item = self.list_view.currentItem()
+        if tree_item is None or tree_item.data(0, ItemTypeRole) != ItemType.File:
+            return
+        file_path = self.edit_song_file(tree_item.data(0, QtCore.Qt.ItemDataRole.UserRole))
+        if file_path:
+            service_item = self.build_service_item(self.create_item_from_id(file_path), remote=True,
+                                                   context=ServiceItemContext.Service)
+            if service_item:
+                self.service_manager.replace_service_item(service_item)
+
+    def on_remote_edit(self, item_id: str, preview: bool = False):
+        """
+        Edit a song from the service or from the preview
+
+        :param item_id: The path of the song
+        :param preview: The song is edited from the preview
+        :return: The updated service item, or None if nothing was changed
+        """
+        tree_item = self.create_item_from_id(item_id)
+        if tree_item.data(0, ItemTypeRole) != ItemType.File:
+            return None
+        file_path = self.edit_song_file(Path(item_id))
+        if not file_path:
+            return None
+        service_item = self.build_service_item(self.create_item_from_id(file_path), remote=True)
+        if service_item and preview:
+            # A song can only be edited from the preview if it comes from the plugin
+            service_item.from_plugin = True
+        return service_item
+
+    def edit_song_file(self, file_path: Optional[Path]) -> Optional[Path]:
+        """
+        Show the song editor and save the song. Everything in the file that the editor does not know about is kept.
+
+        :param file_path: The song to edit, or None for a new song in the current folder
+        :return: The file that was saved, or None if the editor was cancelled
+        """
+        original = None
+        song = None
+        if file_path:
+            try:
+                original = file_path.read_bytes()
+                song = parse_song_xml(original)
+            except (OSError, SongFileError) as error:
+                critical_error_message_box(
+                    translate('SongFolderPlugin.MediaItem', 'Could not read the song'),
+                    translate('SongFolderPlugin.MediaItem', 'The file {name} could not be read as an OpenLyrics '
+                              'song:\n{error}').format(name=file_path, error=error))
+                return None
+        self.edit_song_form.load_song(song)
+        while self.edit_song_form.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            song = self.edit_song_form.song
+            target_path = file_path or new_song_path(self.current_folder, song.title)
+            if file_path and not self._can_overwrite(file_path, original):
+                return None
+            try:
+                write_song_file(song, target_path, original)
+            except OSError as error:
+                # The form keeps the song, so that nothing is lost
+                critical_error_message_box(message=translate('SongFolderPlugin.MediaItem',
+                                                             'Could not save the song: {error}').format(error=error))
+                continue
+            # The file might have the same size and time stamp as before
+            self.index.forget(target_path)
+            self.reload(select_paths=[target_path])
+            return target_path
+        return None
+
+    def _can_overwrite(self, file_path: Path, original: Optional[bytes]) -> bool:
+        """
+        Ask before saving over a file which was changed on disk while it was being edited
+        """
+        try:
+            current = file_path.read_bytes()
+        except OSError:
+            current = None
+        if current == original:
+            return True
+        return QtWidgets.QMessageBox.question(
+            self, translate('SongFolderPlugin.MediaItem', 'Song Changed'),
+            translate('SongFolderPlugin.MediaItem', 'The file {name} was changed on disk while you were editing '
+                      'it. Do you want to overwrite the changes?').format(name=file_path)
+        ) == QtWidgets.QMessageBox.StandardButton.Yes

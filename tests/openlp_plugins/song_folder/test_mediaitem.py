@@ -30,6 +30,7 @@ from PySide6 import QtCore, QtWidgets
 from openlp.core.common.actions import ActionList
 from openlp.core.lib.serviceitem import ItemCapabilities, ServiceItem
 from openlp.plugins.song_folder.lib.mediaitem import SongFolderMediaItem
+from openlp.plugins.song_folder.lib.songfile import FileSong, SongVerse, parse_song_file
 from openlp.plugins.songs.songsplugin import song_footer
 
 
@@ -214,3 +215,168 @@ def test_delete_item_forgets_song(media_item, song_root):
     media_item.delete_item(song_root / 'b-song.xml')
 
     assert song_root / 'b-song.xml' not in media_item.index
+
+
+def test_generate_slide_data_can_be_edited(media_item, song_root):
+    """The song can be edited from the service and the preview, the edit id is the path of the file"""
+    service_item = ServiceItem(media_item.plugin)
+
+    media_item.generate_slide_data(service_item, item=find_item(media_item, song_root / 'b-song.xml'))
+
+    assert service_item.is_capable(ItemCapabilities.CanEdit)
+    assert service_item.edit_id == str(song_root / 'b-song.xml')
+
+
+def test_service_load_sets_edit_id(media_item, song_root):
+    """The edit id is not saved in service files, so it is restored from the path of the song"""
+    service_item = ServiceItem(None)
+    service_item.data_string = {'file path': str(song_root / 'b-song.xml')}
+
+    media_item.service_load(service_item)
+
+    assert service_item.edit_id == str(song_root / 'b-song.xml')
+
+
+def mock_editor(media_item, song=None, accepted=True):
+    """Replace the song editor with one that returns a song"""
+    form = MagicMock()
+    form.exec.return_value = \
+        QtWidgets.QDialog.DialogCode.Accepted if accepted else QtWidgets.QDialog.DialogCode.Rejected
+    form.load_song.side_effect = lambda loaded: setattr(form, 'song', song or loaded)
+    media_item._edit_song_form = form
+    return form
+
+
+def test_on_new_click_writes_song_into_selected_folder(media_item, song_root):
+    """A new song is written into the selected folder, named after its title, and selected"""
+    form = mock_editor(media_item, FileSong(titles=['New: song'], verses=[SongVerse('v', text='Line')]))
+    find_item(media_item, song_root / 'Hymns' / 'a-song.XML').setSelected(True)
+
+    media_item.on_new_click()
+
+    form.load_song.assert_called_once_with(None)
+    new_path = song_root / 'Hymns' / 'New_ song.xml'
+    assert parse_song_file(new_path).title == 'New: song'
+    assert find_item(media_item, new_path).isSelected()
+    assert find_item(media_item, new_path).text(0) == 'New: song'
+
+
+@patch('openlp.plugins.filesystem_library.libraryitem.critical_error_message_box')
+def test_on_new_click_without_folder(mocked_error, media_item, settings):
+    """A folder needs to be chosen before a song can be added"""
+    settings.setValue('song_folder/root folder', None)
+    form = mock_editor(media_item)
+
+    media_item.on_new_click()
+
+    mocked_error.assert_called_once()
+    form.exec.assert_not_called()
+
+
+def edit_song(song):
+    song.titles[0] = 'Edited'
+    song.verses[0].text = 'New line'
+    return song
+
+
+def test_on_edit_click_saves_song_and_updates_service(media_item, song_root):
+    """The edited song is written to its file, keeping what the editor does not know, and updated in the service"""
+    # GIVEN: A song with a property the editor does not know about
+    file_path = song_root / 'b-song.xml'
+    file_path.write_text(SONG.format(title='Beta', chorus='Hallelujah').replace('<ccliNo>', '<key>G</key><ccliNo>'))
+    media_item.reload()
+    form = mock_editor(media_item)
+    form.load_song.side_effect = lambda loaded: setattr(form, 'song', edit_song(loaded))
+    find_item(media_item, file_path).setSelected(True)
+    media_item.list_view.setCurrentItem(find_item(media_item, file_path))
+
+    # WHEN: Editing it
+    media_item.on_edit_click()
+
+    # THEN: The file has the changes and the unknown property, and the service is updated
+    song = parse_song_file(file_path)
+    assert song.title == 'Edited'
+    assert song.verses[0].text == 'New line'
+    assert b'<key>G</key>' in file_path.read_bytes()
+    assert find_item(media_item, file_path).text(0) == 'Edited'
+    service_item = media_item.service_manager.replace_service_item.call_args.args[0]
+    assert service_item.edit_id == str(file_path)
+    assert service_item.title == 'Edited'
+
+
+def test_on_edit_click_cancelled(media_item, song_root):
+    """Nothing is written if the editor is cancelled"""
+    file_path = song_root / 'b-song.xml'
+    original = file_path.read_bytes()
+    mock_editor(media_item, accepted=False)
+    media_item.list_view.setCurrentItem(find_item(media_item, file_path))
+
+    media_item.on_edit_click()
+
+    assert file_path.read_bytes() == original
+    media_item.service_manager.replace_service_item.assert_not_called()
+
+
+@patch('openlp.plugins.song_folder.lib.mediaitem.QtWidgets.QMessageBox.question',
+       return_value=QtWidgets.QMessageBox.StandardButton.No)
+def test_edit_song_file_changed_on_disk(mocked_question, media_item, song_root):
+    """The user is asked before a file which changed while it was edited is overwritten"""
+    file_path = song_root / 'b-song.xml'
+    form = mock_editor(media_item)
+
+    def change_file():
+        file_path.write_text(SONG.format(title='Other', chorus='x'))
+        return QtWidgets.QDialog.DialogCode.Accepted
+    form.exec.side_effect = change_file
+
+    assert media_item.edit_song_file(file_path) is None
+
+    mocked_question.assert_called_once()
+    assert parse_song_file(file_path).title == 'Other'
+
+
+@patch('openlp.plugins.song_folder.lib.mediaitem.critical_error_message_box')
+def test_edit_song_file_broken(mocked_error, media_item, song_root):
+    """A file which cannot be read is not opened in the editor"""
+    form = mock_editor(media_item)
+
+    assert media_item.edit_song_file(song_root / 'Hymns' / 'broken.xml') is None
+
+    mocked_error.assert_called_once()
+    form.exec.assert_not_called()
+
+
+@patch('openlp.plugins.song_folder.lib.mediaitem.critical_error_message_box')
+@patch('openlp.plugins.song_folder.lib.mediaitem.write_song_file')
+def test_edit_song_file_write_error_reopens_editor(mocked_write, mocked_error, media_item, song_root):
+    """If the song cannot be saved, the editor is shown again with the song"""
+    mocked_write.side_effect = [OSError('disk full'), None]
+    form = mock_editor(media_item)
+
+    assert media_item.edit_song_file(song_root / 'b-song.xml') == song_root / 'b-song.xml'
+
+    mocked_error.assert_called_once()
+    assert form.exec.call_count == 2
+    form.load_song.assert_called_once()
+
+
+@pytest.mark.parametrize('preview', [True, False])
+def test_on_remote_edit(media_item, song_root, preview):
+    """Editing from the service or the preview returns the new service item"""
+    form = mock_editor(media_item)
+    form.load_song.side_effect = lambda loaded: setattr(form, 'song', edit_song(loaded))
+
+    service_item = media_item.on_remote_edit(str(song_root / 'b-song.xml'), preview)
+
+    assert service_item.title == 'Edited'
+    assert service_item.from_plugin is preview
+
+
+def test_on_remote_edit_outside_library(media_item, temp_folder):
+    """Files outside the library are not edited"""
+    outside = Path(temp_folder) / 'outside.xml'
+    outside.write_text(SONG.format(title='Outside', chorus='x'))
+    form = mock_editor(media_item)
+
+    assert media_item.on_remote_edit(str(outside)) is None
+    form.exec.assert_not_called()
