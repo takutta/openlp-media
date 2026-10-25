@@ -20,6 +20,7 @@
 ##########################################################################
 import glob
 import logging
+import shutil
 from collections import namedtuple
 from pathlib import Path
 from typing import Any, List, Optional
@@ -38,7 +39,8 @@ from openlp.core.lib.ui import critical_error_message_box
 from openlp.core.state import State
 from openlp.core.ui.icons import UiIcons
 from openlp.core.ui.media import get_supported_media_suffix
-from openlp.plugins.filesystem_library.libraryitem import FileSystemLibraryItem, ItemType, ItemTypeRole
+from openlp.plugins.filesystem_library.libraryitem import FileSystemLibraryItem, ItemType, ItemTypeRole, \
+    move_to_trash
 from openlp.plugins.song_folder.forms.editsongform import SongFileEditForm
 from openlp.plugins.song_folder.lib.songfile import FORCED_SPLIT, FileSong, SongFileError, parse_song_file, \
     parse_song_xml
@@ -360,20 +362,59 @@ class SongFolderMediaItem(FileSystemLibraryItem):
                 first_slide = '\n'.join(service_item.raw_footer)
             service_item.add_from_text(first_slide, 'O2', footer_html='', metadata=metadata)
 
-    def find_background_audio(self, file_path: Path) -> Optional[Path]:
+    def background_audio_files(self, file_path: Path) -> List[Path]:
         """
-        The background audio of a song is an audio file next to it with the same name, e.g. "Song.mp3" for "Song.xml"
+        The audio files next to a song with the same name, e.g. "Song.mp3" for "Song.xml"
 
         :param file_path: The song file
-        :return: The audio file, or None if there is none
         """
         audio, _ = get_supported_media_suffix()
         suffixes = {suffix[1:].lower() for suffix in audio if suffix}
         try:
             candidates = sorted(file_path.parent.glob(glob.escape(file_path.stem) + '.*'))
+            return [path for path in candidates if path.suffix.lower() in suffixes and
+                    path.stem.casefold() == file_path.stem.casefold() and path.is_file()]
         except OSError:
-            return None
-        return next((path for path in candidates if path.suffix.lower() in suffixes and path.is_file()), None)
+            return []
+
+    def find_background_audio(self, file_path: Path) -> Optional[Path]:
+        """
+        The background audio of a song is the first audio file next to it with the same name
+
+        :param file_path: The song file
+        :return: The audio file, or None if there is none
+        """
+        return next(iter(self.background_audio_files(file_path)), None)
+
+    def related_files(self, file_path: Path) -> List[Path]:
+        """
+        The audio files of a song are copied, moved and deleted together with it
+        """
+        return self.background_audio_files(file_path)
+
+    def save_background_audio(self, file_path: Path, audio_path: Optional[Path]) -> List[str]:
+        """
+        Make an audio file the background audio of a song. It is copied next to the song with the same name, and the
+        other audio files of the song are moved to the trash.
+
+        :param file_path: The song file
+        :param audio_path: The audio file, or None to remove the background audio
+        :return: The names of the files which could not be removed or copied
+        """
+        current = self.background_audio_files(file_path)
+        if audio_path == next(iter(current), None):
+            return []
+        keep = [path for path in current if audio_path and path.resolve() == audio_path.resolve()]
+        failed = [path.name for path in current if path not in keep and not move_to_trash(path)]
+        if audio_path and not keep:
+            target_path = file_path.with_name(file_path.stem + audio_path.suffix)
+            try:
+                if target_path.exists():
+                    raise FileExistsError(str(target_path))
+                shutil.copy2(audio_path, target_path)
+            except OSError as error:
+                failed.append('{name} ({error})'.format(name=audio_path.name, error=error))
+        return failed
 
     def add_background_audio(self, service_item, file_path: Path):
         """
@@ -539,7 +580,8 @@ class SongFolderMediaItem(FileSystemLibraryItem):
                     translate('SongFolderPlugin.MediaItem', 'The file {name} could not be read as an OpenLyrics '
                               'song:\n{error}').format(name=file_path, error=error))
                 return None
-        self.edit_song_form.load_song(song)
+        self.edit_song_form.audio_folder = file_path.parent if file_path else self.current_folder
+        self.edit_song_form.load_song(song, self.find_background_audio(file_path) if file_path else None)
         while self.edit_song_form.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             song = self.edit_song_form.song
             target_path = file_path or song_file_name(song.title, self.current_folder)
@@ -552,6 +594,13 @@ class SongFolderMediaItem(FileSystemLibraryItem):
                 critical_error_message_box(message=translate('SongFolderPlugin.MediaItem',
                                                              'Could not save the song: {error}').format(error=error))
                 continue
+            # A new song does not touch audio files which happen to have its name, unless audio was chosen
+            failed = self.save_background_audio(target_path, self.edit_song_form.audio_path) \
+                if file_path or self.edit_song_form.audio_path else []
+            if failed:
+                critical_error_message_box(message=translate('SongFolderPlugin.MediaItem',
+                                                             'The background audio could not be changed:\n{names}'
+                                                             ).format(names='\n'.join(failed)))
             # The file might have the same size and time stamp as before
             self.index.forget(target_path)
             self.reload(select_paths=[target_path])

@@ -195,6 +195,72 @@ def test_dnd_move_internal(library_item, root):
     assert (root / 'Sub B' / 'song 2.txt').exists()
 
 
+class RelatedLibraryItem(TextLibraryItem):
+    """A library item where a ".note" file belongs to each text file"""
+    def related_files(self, file_path):
+        note = file_path.with_suffix('.note')
+        return [note] if note.exists() else []
+
+
+@pytest.fixture
+def related_item(registry, settings, root):
+    registry.register('main_window', MagicMock())
+    settings.setValue('test_library/root folder', root)
+    (root / 'song 2.note').write_text('note')
+    item = RelatedLibraryItem(None, make_plugin())
+    item.initialise()
+    yield item
+    item._reload_timer.stop()
+
+
+def test_dnd_move_internal_moves_related_files(related_item, root):
+    """The related files of a file are moved with it"""
+    find_item(related_item, root / 'song 2.txt').setSelected(True)
+
+    related_item.dnd_move_internal(find_item(related_item, root / 'Sub B'))
+
+    assert (root / 'Sub B' / 'song 2.note').read_text() == 'note'
+    assert not (root / 'song 2.note').exists()
+
+
+@patch('openlp.plugins.filesystem_library.libraryitem.critical_error_message_box')
+def test_dnd_move_internal_keeps_existing_related_files(mocked_error, related_item, root):
+    """Related files are not overwritten when the file is moved"""
+    (root / 'Sub B' / 'song 2.note').write_text('other')
+    find_item(related_item, root / 'song 2.txt').setSelected(True)
+
+    related_item.dnd_move_internal(find_item(related_item, root / 'Sub B'))
+
+    assert (root / 'Sub B' / 'song 2.txt').exists()
+    assert (root / 'Sub B' / 'song 2.note').read_text() == 'other'
+    assert (root / 'song 2.note').exists()
+    mocked_error.assert_called_once()
+
+
+def test_validate_and_load_copies_related_files(related_item, root, temp_folder):
+    """The related files of a file from outside the library are copied with it"""
+    outside = Path(temp_folder) / 'new.txt'
+    outside.write_text('new')
+    outside.with_suffix('.note').write_text('new note')
+
+    related_item.validate_and_load([outside], find_item(related_item, root / 'Sub B'))
+
+    assert (root / 'Sub B' / 'new.note').read_text() == 'new note'
+    assert outside.with_suffix('.note').exists()
+
+
+@patch('openlp.plugins.filesystem_library.libraryitem.move_to_trash', return_value=True)
+@patch('openlp.plugins.filesystem_library.libraryitem.QtWidgets.QMessageBox.question',
+       return_value=QtWidgets.QMessageBox.StandardButton.Yes)
+def test_delete_moves_related_files_to_trash(mocked_question, mocked_trash, related_item, root):
+    """The related files of a file are moved to the trash with it"""
+    find_item(related_item, root / 'song 2.txt').setSelected(True)
+
+    related_item.on_delete_click()
+
+    assert [call.args[0] for call in mocked_trash.call_args_list] == [root / 'song 2.txt', root / 'song 2.note']
+
+
 def test_dnd_move_folder_into_itself_is_ignored(library_item, root):
     """A folder cannot be moved inside itself"""
     find_item(library_item, root / 'Sub A').setSelected(True)

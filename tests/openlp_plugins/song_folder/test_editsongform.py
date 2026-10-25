@@ -21,6 +21,7 @@
 """
 Test the song editor of the song folder plugin
 """
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -196,3 +197,40 @@ def test_transpose(form, settings):
 
     assert text_to_lyrics(form.lyrics_edit.toPlainText()) == [SongVerse('v', text='[=D]Line [A]two'),
                                                               SongVerse('c', text='[G]Chorus')]
+
+
+def test_background_audio(form):
+    """The audio file of the song is shown and can be removed"""
+    form.load_song(SONG, Path('/songs/Title.mp3'))
+
+    assert form.audio_path == Path('/songs/Title.mp3')
+    assert form.audio_edit.text() == str(Path('/songs/Title.mp3'))
+    assert form.audio_remove_button.isEnabled()
+
+    form.audio_remove_button.click()
+
+    assert form.audio_path is None
+    assert form.audio_edit.text() == ''
+    assert not form.audio_remove_button.isEnabled()
+
+
+@patch('openlp.plugins.song_folder.forms.editsongform.FileDialog.getOpenFileName')
+def test_choose_background_audio(mocked_dialog, form):
+    """An audio file can be chosen for the song"""
+    mocked_dialog.return_value = (Path('/music/new.ogg'), '')
+    form.load_song(SONG)
+
+    form.audio_choose_button.click()
+
+    assert form.audio_path == Path('/music/new.ogg')
+    mocked_dialog.return_value = (None, '')
+    form.audio_choose_button.click()
+    assert form.audio_path == Path('/music/new.ogg')
+
+
+def test_load_song_clears_background_audio(form):
+    """Loading another song forgets the audio of the previous song"""
+    form.load_song(SONG, Path('/songs/Title.mp3'))
+    form.load_song(SONG)
+
+    assert form.audio_path is None

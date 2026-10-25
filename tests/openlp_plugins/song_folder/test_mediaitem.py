@@ -259,7 +259,12 @@ def mock_editor(media_item, song=None, accepted=True):
     form = MagicMock()
     form.exec.return_value = \
         QtWidgets.QDialog.DialogCode.Accepted if accepted else QtWidgets.QDialog.DialogCode.Rejected
-    form.load_song.side_effect = lambda loaded: setattr(form, 'song', song or loaded)
+    form.audio_path = None
+
+    def load_song(loaded, audio_path=None):
+        form.song = song or loaded
+        form.audio_path = audio_path
+    form.load_song.side_effect = load_song
     media_item._edit_song_form = form
     return form
 
@@ -271,7 +276,7 @@ def test_on_new_click_writes_song_into_selected_folder(media_item, song_root):
 
     media_item.on_new_click()
 
-    form.load_song.assert_called_once_with(None)
+    form.load_song.assert_called_once_with(None, None)
     new_path = song_root / 'Hymns' / 'New_ song.xml'
     assert parse_song_file(new_path).title == 'New: song'
     assert find_item(media_item, new_path).isSelected()
@@ -313,7 +318,7 @@ def test_on_edit_click_saves_song_and_updates_service(media_item, song_root):
     file_path.write_text(SONG.format(title='Beta', chorus='Hallelujah').replace('<ccliNo>', '<key>G</key><ccliNo>'))
     media_item.reload()
     form = mock_editor(media_item)
-    form.load_song.side_effect = lambda loaded: setattr(form, 'song', edit_song(loaded))
+    form.load_song.side_effect = lambda loaded, audio_path=None: setattr(form, 'song', edit_song(loaded))
     find_item(media_item, file_path).setSelected(True)
     media_item.list_view.setCurrentItem(find_item(media_item, file_path))
 
@@ -391,7 +396,7 @@ def test_edit_song_file_write_error_reopens_editor(mocked_write, mocked_error, m
 def test_on_remote_edit(media_item, song_root, preview):
     """Editing from the service or the preview returns the new service item"""
     form = mock_editor(media_item)
-    form.load_song.side_effect = lambda loaded: setattr(form, 'song', edit_song(loaded))
+    form.load_song.side_effect = lambda loaded, audio_path=None: setattr(form, 'song', edit_song(loaded))
 
     service_item = media_item.on_remote_edit(str(song_root / 'b-song.xml'), preview)
 
@@ -499,3 +504,167 @@ def test_index_cache(media_item, song_root):
     assert index.get(song_root / 'b-song.xml').title == 'Beta'
     assert index.error(song_root / 'Hymns' / 'broken.xml')
     assert not index.changed
+
+
+def audio_suffixes():
+    return patch('openlp.plugins.song_folder.lib.mediaitem.get_supported_media_suffix',
+                 return_value=(['', '*.mp3', '*.ogg'], ['*.mp4']))
+
+
+def choose_audio(form, audio_path):
+    """Make the mocked editor return an audio file"""
+    load_song = form.load_song.side_effect
+
+    def choose(*args):
+        load_song(*args)
+        form.audio_path = audio_path
+    form.load_song.side_effect = choose
+
+
+def test_background_audio_files(media_item, song_root):
+    """Only audio files with exactly the name of the song belong to it"""
+    for name in ['b-song.mp3', 'b-song.OGG', 'b-song.txt', 'b-song.extra.mp3', 'b-song-other.mp3']:
+        (song_root / name).write_bytes(b'audio')
+
+    with audio_suffixes():
+        assert set(media_item.related_files(song_root / 'b-song.xml')) == {song_root / 'b-song.OGG',
+                                                                           song_root / 'b-song.mp3'}
+
+
+def test_edit_song_shows_background_audio(media_item, song_root):
+    """The editor is given the audio file of the song"""
+    (song_root / 'b-song.mp3').write_bytes(b'audio')
+    form = mock_editor(media_item, accepted=False)
+
+    with audio_suffixes():
+        media_item.edit_song_file(song_root / 'b-song.xml')
+
+    assert form.load_song.call_args.args[1] == song_root / 'b-song.mp3'
+
+
+@patch('openlp.plugins.song_folder.lib.mediaitem.move_to_trash')
+def test_edit_song_chooses_background_audio(mocked_trash, media_item, song_root, temp_folder):
+    """A chosen audio file is copied next to the song and the old audio file is moved to the trash"""
+    # GIVEN: A song with an audio file, and another audio file outside the library
+    (song_root / 'b-song.mp3').write_bytes(b'old')
+    chosen = Path(temp_folder) / 'Chosen.ogg'
+    chosen.write_bytes(b'new')
+    mocked_trash.side_effect = lambda path: path.unlink() is None
+    choose_audio(mock_editor(media_item), chosen)
+
+    # WHEN: The song is saved
+    with audio_suffixes():
+        media_item.edit_song_file(song_root / 'b-song.xml')
+
+    # THEN: The chosen file is the audio of the song
+    mocked_trash.assert_called_once_with(song_root / 'b-song.mp3')
+    assert (song_root / 'b-song.ogg').read_bytes() == b'new'
+    assert chosen.exists()
+
+
+@patch('openlp.plugins.song_folder.lib.mediaitem.move_to_trash', return_value=True)
+def test_edit_song_keeps_background_audio(mocked_trash, media_item, song_root):
+    """Audio files are left alone when the audio is not changed"""
+    (song_root / 'b-song.mp3').write_bytes(b'audio')
+    (song_root / 'b-song.ogg').write_bytes(b'audio')
+    mock_editor(media_item)
+
+    with audio_suffixes():
+        media_item.edit_song_file(song_root / 'b-song.xml')
+
+    mocked_trash.assert_not_called()
+
+
+@patch('openlp.plugins.song_folder.lib.mediaitem.move_to_trash', return_value=True)
+def test_edit_song_removes_background_audio(mocked_trash, media_item, song_root):
+    """Removing the audio in the editor moves the audio files of the song to the trash"""
+    (song_root / 'b-song.mp3').write_bytes(b'audio')
+    (song_root / 'b-song.ogg').write_bytes(b'audio')
+    choose_audio(mock_editor(media_item), None)
+
+    with audio_suffixes():
+        media_item.edit_song_file(song_root / 'b-song.xml')
+
+    assert [call.args[0] for call in mocked_trash.call_args_list] == [song_root / 'b-song.mp3',
+                                                                      song_root / 'b-song.ogg']
+
+
+@patch('openlp.plugins.song_folder.lib.mediaitem.move_to_trash', return_value=True)
+def test_edit_song_chooses_other_audio_of_song(mocked_trash, media_item, song_root):
+    """Choosing the second audio file of a song moves the first one to the trash"""
+    (song_root / 'b-song.mp3').write_bytes(b'audio')
+    (song_root / 'b-song.ogg').write_bytes(b'audio')
+    choose_audio(mock_editor(media_item), song_root / 'b-song.ogg')
+
+    with audio_suffixes():
+        media_item.edit_song_file(song_root / 'b-song.xml')
+
+    mocked_trash.assert_called_once_with(song_root / 'b-song.mp3')
+
+
+@patch('openlp.plugins.song_folder.lib.mediaitem.critical_error_message_box')
+@patch('openlp.plugins.song_folder.lib.mediaitem.move_to_trash', return_value=False)
+def test_edit_song_background_audio_error(mocked_trash, mocked_error, media_item, song_root, temp_folder):
+    """The user is told if the audio cannot be changed, but the song is saved"""
+    (song_root / 'b-song.mp3').write_bytes(b'old')
+    choose_audio(mock_editor(media_item, edit_song(parse_song_file(song_root / 'b-song.xml'))),
+                 Path(temp_folder) / 'missing.mp3')
+
+    with audio_suffixes():
+        assert media_item.edit_song_file(song_root / 'b-song.xml') == song_root / 'b-song.xml'
+
+    mocked_error.assert_called_once()
+    assert parse_song_file(song_root / 'b-song.xml').title == 'Edited'
+
+
+@patch('openlp.plugins.song_folder.lib.mediaitem.move_to_trash', return_value=True)
+def test_new_song_leaves_audio_with_its_name(mocked_trash, media_item, song_root):
+    """A new song without audio does not remove an audio file which happens to have its name"""
+    (song_root / 'New.mp3').write_bytes(b'audio')
+    mock_editor(media_item, FileSong(titles=['New'], verses=[SongVerse('v', text='Line')]))
+
+    with audio_suffixes():
+        media_item.on_new_click()
+
+    assert (song_root / 'New.xml').exists()
+    mocked_trash.assert_not_called()
+
+
+def test_new_song_with_background_audio(media_item, song_root, temp_folder):
+    """The audio chosen for a new song is copied next to it"""
+    chosen = Path(temp_folder) / 'chosen.mp3'
+    chosen.write_bytes(b'audio')
+    choose_audio(mock_editor(media_item, FileSong(titles=['New'], verses=[SongVerse('v', text='Line')])), chosen)
+
+    with audio_suffixes():
+        media_item.on_new_click()
+
+    assert (song_root / 'New.mp3').read_bytes() == b'audio'
+
+
+def test_move_song_moves_audio(media_item, song_root):
+    """The audio file moves together with the song"""
+    (song_root / 'b-song.mp3').write_bytes(b'audio')
+    find_item(media_item, song_root / 'b-song.xml').setSelected(True)
+
+    with audio_suffixes():
+        media_item.dnd_move_internal(find_item(media_item, song_root / 'Hymns'))
+
+    assert (song_root / 'Hymns' / 'b-song.xml').exists()
+    assert (song_root / 'Hymns' / 'b-song.mp3').read_bytes() == b'audio'
+    assert not (song_root / 'b-song.mp3').exists()
+
+
+@patch('openlp.plugins.filesystem_library.libraryitem.move_to_trash', return_value=True)
+@patch('openlp.plugins.filesystem_library.libraryitem.QtWidgets.QMessageBox.question',
+       return_value=QtWidgets.QMessageBox.StandardButton.Yes)
+def test_delete_song_deletes_audio(mocked_question, mocked_trash, media_item, song_root):
+    """The audio file is moved to the trash together with the song"""
+    (song_root / 'b-song.mp3').write_bytes(b'audio')
+    find_item(media_item, song_root / 'b-song.xml').setSelected(True)
+
+    with audio_suffixes():
+        media_item.on_delete_click()
+
+    assert [call.args[0] for call in mocked_trash.call_args_list] == [song_root / 'b-song.xml',
+                                                                      song_root / 'b-song.mp3']

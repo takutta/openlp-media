@@ -24,6 +24,7 @@ form which edits a :class:`FileSong`. The lyrics are edited as one text, with a 
 verse, like in the "Edit All" view of the Songs plugin.
 """
 import re
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -32,6 +33,8 @@ from openlp.core.common.i18n import UiStrings, get_natural_key, translate
 from openlp.core.common.registry import Registry
 from openlp.core.lib.ui import create_button_box, critical_error_message_box, find_and_set_in_combo_box
 from openlp.core.ui.icons import UiIcons
+from openlp.core.ui.media import get_supported_media_suffix
+from openlp.core.widgets.dialogs import FileDialog
 from openlp.plugins.songs.lib import VerseType, transpose_lyrics
 from openlp.plugins.songs.lib.db import AuthorType
 from openlp.plugins.songs.lib.ui import SongStrings, show_key_warning
@@ -186,6 +189,9 @@ class SongFileEditForm(QtWidgets.QDialog):
         super().__init__(parent, QtCore.Qt.WindowType.WindowSystemMenuHint | QtCore.Qt.WindowType.WindowTitleHint |
                          QtCore.Qt.WindowType.WindowCloseButtonHint)
         self.song: Optional[FileSong] = None
+        self.audio_path: Optional[Path] = None
+        # Where the audio file dialog starts when the song has no audio
+        self.audio_folder: Optional[Path] = None
         self._other_titles: List[str] = []
         self.setup_ui()
         self.retranslate_ui()
@@ -308,6 +314,25 @@ class SongFileEditForm(QtWidgets.QDialog):
         self.comments_layout.addWidget(self.comments_edit)
         self.rights_tab_layout.addWidget(self.comments_group_box)
         self.tab_widget.addTab(self.rights_tab, '')
+        # Background audio
+        self.audio_tab = QtWidgets.QWidget()
+        self.audio_tab_layout = QtWidgets.QVBoxLayout(self.audio_tab)
+        self.audio_layout = QtWidgets.QHBoxLayout()
+        self.audio_edit = QtWidgets.QLineEdit(self.audio_tab)
+        self.audio_edit.setReadOnly(True)
+        self.audio_layout.addWidget(self.audio_edit)
+        self.audio_choose_button = QtWidgets.QPushButton(self.audio_tab)
+        self.audio_choose_button.setIcon(UiIcons().open)
+        self.audio_layout.addWidget(self.audio_choose_button)
+        self.audio_remove_button = QtWidgets.QPushButton(self.audio_tab)
+        self.audio_remove_button.setIcon(UiIcons().delete)
+        self.audio_layout.addWidget(self.audio_remove_button)
+        self.audio_tab_layout.addLayout(self.audio_layout)
+        self.audio_help_label = QtWidgets.QLabel(self.audio_tab)
+        self.audio_help_label.setWordWrap(True)
+        self.audio_tab_layout.addWidget(self.audio_help_label)
+        self.audio_tab_layout.addStretch()
+        self.tab_widget.addTab(self.audio_tab, '')
         self.button_box = create_button_box(self, 'button_box', ['cancel', 'save'])
         self.dialog_layout.addWidget(self.button_box)
         # Signals and slots
@@ -320,6 +345,8 @@ class SongFileEditForm(QtWidgets.QDialog):
         self.copyright_insert_button.clicked.connect(self.on_copyright_insert_button_clicked)
         self.transpose_up_button.clicked.connect(lambda: self.transpose(1))
         self.transpose_down_button.clicked.connect(lambda: self.transpose(-1))
+        self.audio_choose_button.clicked.connect(self.on_audio_choose_button_clicked)
+        self.audio_remove_button.clicked.connect(lambda: self.set_audio_path(None))
         Registry().register_function('theme_update_list', self.load_themes)
 
     def retranslate_ui(self):
@@ -365,14 +392,23 @@ class SongFileEditForm(QtWidgets.QDialog):
         self.comments_group_box.setTitle(translate('SongsPlugin.EditSongForm', 'Comments'))
         self.tab_widget.setTabText(self.tab_widget.indexOf(self.rights_tab),
                                    translate('SongFolderPlugin.EditSongForm', 'Theme, Copyright && Comments'))
+        self.audio_choose_button.setText(translate('SongFolderPlugin.EditSongForm', '&Choose File...'))
+        self.audio_remove_button.setText(translate('SongsPlugin.EditSongForm', '&Remove'))
+        self.audio_edit.setPlaceholderText(translate('SongFolderPlugin.EditSongForm', 'No background audio'))
+        self.audio_help_label.setText(translate('SongFolderPlugin.EditSongForm',
+                                                'The audio file is copied next to the song file, with the same name '
+                                                'as the song file. It is moved and deleted together with the song.'))
+        self.tab_widget.setTabText(self.tab_widget.indexOf(self.audio_tab),
+                                   translate('SongsPlugin.EditSongForm', 'Linked Audio'))
 
     # Loading and saving
 
-    def load_song(self, song: Optional[FileSong]):
+    def load_song(self, song: Optional[FileSong], audio_path: Optional[Path] = None):
         """
         Show a song in the form
 
         :param song: The song to edit, or None for a new song
+        :param audio_path: The background audio file of the song, if it has one
         """
         song = song or FileSong()
         self.song = None
@@ -401,6 +437,7 @@ class SongFileEditForm(QtWidgets.QDialog):
         else:
             self.theme_combo_box.setCurrentIndex(0)
         self.transpose_widget.setVisible(bool(Registry().get('settings').value('songs/enable chords')))
+        self.set_audio_path(audio_path)
         self.title_edit.setFocus()
 
     def get_song(self) -> FileSong:
@@ -555,6 +592,31 @@ class SongFileEditForm(QtWidgets.QDialog):
                                        message=translate('SongsPlugin.EditVerseForm',
                                                          'Transposing failed because of invalid chord:\n{err_msg}'
                                                          ).format(err_msg=error))
+
+    def set_audio_path(self, audio_path: Optional[Path]):
+        """
+        Show the background audio file of the song
+
+        :param audio_path: The audio file, or None for no background audio
+        """
+        self.audio_path = audio_path
+        self.audio_edit.setText(str(audio_path) if audio_path else '')
+        self.audio_edit.setToolTip(str(audio_path) if audio_path else '')
+        self.audio_remove_button.setEnabled(audio_path is not None)
+
+    def on_audio_choose_button_clicked(self):
+        """
+        Choose an audio file to play in the background of the song
+        """
+        audio, _ = get_supported_media_suffix()
+        filters = '{audio} ({suffixes})'.format(audio=translate('SongFolderPlugin.EditSongForm', 'Audio Files'),
+                                                suffixes=' '.join(suffix for suffix in audio if suffix))
+        file_path, _ = FileDialog.getOpenFileName(self, translate('SongFolderPlugin.EditSongForm',
+                                                                  'Choose Background Audio'),
+                                                  self.audio_path.parent if self.audio_path else self.audio_folder,
+                                                  filters)
+        if file_path:
+            self.set_audio_path(file_path)
 
     def on_copyright_insert_button_clicked(self):
         self.copyright_edit.insert(SongStrings().CopyrightSymbol)
