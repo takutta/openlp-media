@@ -76,6 +76,11 @@ Käyttö lyhyesti
 - Vanhat laulut saa siirrettyä viemällä ne Laulut-pluginista:
   Tiedosto > Vie tiedostoksi > Laulut. Valitse vientikansioksi Laulukansion
   kansio. Laulut tallentuvat OpenLyrics-tiedostoina.
+- Koko vanhan kirjaston (kuvat, media, presentaatiot ja laulut) saa
+  siirrettyä kansioihin sen ryhmien mukaan skriptillä
+  tools/migrate_database.py (zipissä, ks. "Moving an existing library"
+  alla olevalla verkkosivulla). Se tarvitsee Pythonin ja OpenLP:n
+  lähdekoodin.
 
 
 Lisätietoja ja lähdekoodi: https://github.com/takutta/openlp-media

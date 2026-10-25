@@ -29,6 +29,7 @@ tools/installer.iss      Inno Setup -asennusohjelma
 tools/INSTALL.txt        englanninkielinen asennusohje, zipissä ja asennusohjelman lopussa
 tools/ASENNUSOHJE.txt    sama suomeksi; pidä ohjeet samansisältöisinä
 tools/smoke.py           OpenLP:n käynnistävä smoke-testi
+tools/migrate_database.py  vanhan OpenLP:n kirjastot kansioiksi (kertakäyttöinen, alla)
 upstream/                OpenLP (submoduuli)
 VERSION                  pluginien versio
 ```
@@ -349,11 +350,35 @@ QT_QPA_PLATFORM=offscreen .venv/Scripts/python -m pytest          # Linuxissa .v
 - Testeissä oikeita widgettejä luotaessa `ActionList.shortcut_map` pitää tyhjentää testien välillä.
 - Käytä tiedostoissa samaa GPL-lisenssiotsikkoa kuin muualla koodissa.
 
+## Siirtoskripti: `tools/migrate_database.py`
+
+Kertakäyttöinen työkalu, joka tekee vanhan portable-OpenLP:n tietokantakirjastoista kansiot uusille plugineille.
+Tehtiin alun perin forkissa yhden käyttäjän aineistolle (`E:\openlp` → `E:\openlp-muunnettu`). Sille ei ole
+testejä: tulos tarkistetaan lukemalla suunnitelma.
+
+- `plan <lähde> <kohde>` yhdistää kuva-, media- ja presentaatiokantojen rivit lähteen tiedostoihin sha256:lla
+  (kannoissa on hash), `.osz`-listojen sisältä (upotetut tiedostot on nimetty hashilla) tai nimellä ja kansiopolun
+  loppuosalla. Kirjoittaa `plan.csv`:n, `missing.csv`:n ja `summary.txt`:n. Hashit ovat välimuistissa
+  `hash-cache.json`, joten uudelleenajo on nopea.
+- `copy <lähde> <kohde>` tekee vain sen, mitä suunnitelmassa lukee (toiminnot copy/extract/song), ohittaa jo
+  kopioidut ja tekee `Data`-kansion: kaikki paitsi vanhojen kirjastojen kansiot ja `Temp`. `OpenLP.ini`:hin
+  uusien pluginien `root folder` suhteellisena ja `status` numerona (kuten OpenLP itse tallentaa).
+  `Settings()` ilman tiedostonimeä on Windowsissa rekisteri, joten ini avataan nimellä.
+- Laulut viedään songs-pluginin `OpenLyrics.song_to_xml`illä kannan kopiosta, joka päivitetään ensin
+  (`upgrade_db`). Levyn `.xml`-tiedostoista mukaan tulevat vain OpenLyrics-laulut, joita kannassa ei ole.
+- Duplikaatti = sama sisältö. Lyhin polku voittaa (kansiotasot, merkit, aakkoset). Pois jäävät myös muut
+  tiedostotyypit, `*_files`/`*_tiedostot`-kansiot ja tiedostot, jotka ovat samassa kansiossa `.exe`/`.msi`:n kanssa.
+- `--fi` vaihtaa kansioiden, tiedostojen, CSV-sarakkeiden ja toimintojen nimet suomeksi (`WORDS`). Sama valinta
+  pitää antaa molemmille vaiheille.
+- Ajetaan kehitysympäristössä: skripti lisää `upstream/`in polkuun ja pluginit `openlp.plugins`-pakettiin kuten
+  `conftest.py`. Qt tulee `compat.py`:stä.
+
 ## Julkaisu
 
 1. Päivitä `VERSION`.
 2. `.venv/Scripts/python tools/build.py` tekee kansioon `dist/` tiedostot
-   `openlp-folder-plugins-<versio>.zip` (pluginit, `INSTALL.txt`, `ASENNUSOHJE.txt`, `LICENSE.txt`) ja
+   `openlp-folder-plugins-<versio>.zip` (pluginit, `INSTALL.txt`, `ASENNUSOHJE.txt`, `LICENSE.txt`,
+   `tools/migrate_database.py`) ja
    `openlp-folder-plugins-<versio>-setup.exe`, jos Inno Setup on asennettu (`scoop install extras/inno-setup`).
 3. Asennusohjelma asentaa ilman järjestelmänvalvojan oikeuksia kansioon `{userappdata}\openlp\data\contrib\plugins`.
    Se poistaa ensin vanhan version kansiot ja kieltäytyy asentamasta, jos OpenLP on käynnissä (WMI-kysely, ei

@@ -75,6 +75,10 @@ Quick guide
 - To move your old songs, export them from the Songs plugin:
   File > Export > Song. Choose the Song Folder's folder as the export folder.
   The songs are saved as OpenLyrics files.
+- To move a whole old library (images, media, presentations and songs) into
+  folders that follow its groups, see tools/migrate_database.py in the zip
+  and "Moving an existing library" on the web page below. It needs Python
+  and OpenLP's source code.
 
 
 More information and source code: https://github.com/takutta/openlp-media

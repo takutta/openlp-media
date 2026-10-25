@@ -21,7 +21,7 @@
 """
 Build the release files into dist/:
 
-    openlp-folder-plugins-<version>.zip         the plugins and the install guides, installed by hand
+    openlp-folder-plugins-<version>.zip         the plugins, the install guides and tools/migrate_database.py
     openlp-folder-plugins-<version>-setup.exe   the Windows installer, if Inno Setup (ISCC) is installed
 
     python tools/build.py [--translations-only]
@@ -82,6 +82,9 @@ def stage() -> Path:
         guide = (REPO / 'tools' / name).read_text(encoding='utf-8').replace(placeholder, VERSION)
         (stage_dir / name).write_text(guide, encoding='utf-8-sig', newline='\r\n')
     shutil.copy(REPO / 'LICENSE', stage_dir / 'LICENSE.txt')
+    # Only in the zip, the installer installs the plugins folder
+    (stage_dir / 'tools').mkdir()
+    shutil.copy(REPO / 'tools' / 'migrate_database.py', stage_dir / 'tools')
     return stage_dir
 
 
