@@ -193,7 +193,7 @@ To add a translation, add `<language>.ts` (for example `sv.ts`) to every `plugin
 ## Development
 
 OpenLP is a git submodule in `upstream/`, pinned to the release the plugins are tested against (3.1.7). The tests
-use OpenLP's own fixtures and test resources from there. See [AGENTS.md](AGENTS.md) for the details (in Finnish).
+use OpenLP's own fixtures and test resources from there. See [AGENTS.md](AGENTS.md) for the details.
 
 ```sh
 git clone --recurse-submodules https://github.com/takutta/openlp-media.git
