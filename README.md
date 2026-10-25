@@ -49,7 +49,7 @@ Point the plugin at a folder. Whatever is in that folder is the library.
 
 ## Installation
 
-Download the latest release from the [Releases](https://github.com/takutta/openlp-folder-plugins/releases) page.
+Download the latest release from the [Releases](https://github.com/takutta/openlp-media/releases) page.
 Both files come with an install guide in English (`INSTALL.txt`) and Finnish (`ASENNUSOHJE.txt`).
 The installer asks for the language first.
 
@@ -165,8 +165,8 @@ OpenLP is a git submodule in `upstream/`, pinned to the release the plugins are 
 use OpenLP's own fixtures and test resources from there. See [AGENTS.md](AGENTS.md) for the details (in Finnish).
 
 ```sh
-git clone --recurse-submodules https://github.com/takutta/openlp-folder-plugins.git
-cd openlp-folder-plugins
+git clone --recurse-submodules https://github.com/takutta/openlp-media.git
+cd openlp-media
 uv venv --python 3.11 && uv pip install -r requirements.txt
 QT_QPA_PLATFORM=offscreen .venv/Scripts/python -m pytest      # .venv/bin/python on Linux and macOS
 .venv/Scripts/python tools/build.py                           # dist/*.zip, and the .exe if Inno Setup is installed

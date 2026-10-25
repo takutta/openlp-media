@@ -78,5 +78,5 @@ Käyttö lyhyesti
   kansio. Laulut tallentuvat OpenLyrics-tiedostoina.
 
 
-Lisätietoja ja lähdekoodi: https://github.com/takutta/openlp-folder-plugins
+Lisätietoja ja lähdekoodi: https://github.com/takutta/openlp-media
 Lisenssi: GNU General Public License, versio 3 tai uudempi (LICENSE.txt).

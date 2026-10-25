@@ -4,7 +4,8 @@
 
 Neljä OpenLP-pluginia (media-, kuva-, presentaatio- ja laulukansio), jotka käyttävät suoraa tiedostopolkua
 tietokannan sijaan: valittu kansio levyllä *on* kirjasto. Pluginit tehtiin alun perin OpenLP:n forkissa
-(`takutta/openlp-media`), ja ne siirrettiin tähän omaan repoon. Forkin historia jää sinne.
+samassa GitHub-repossa (`takutta/openlp-media`). Tämä koodi on haarassa `main`, jolla ei ole yhteistä
+historiaa forkin kanssa. Forkin historia on haarassa `feature/filesystem-plugins`.
 
 - OpenLP on git-submoduuli `upstream/` (`https://gitlab.com/openlp/openlp.git`, OpenLP ei ole GitHubissa).
   Se on lukittu julkaisuun, jota vastaan testataan (nyt `3.1.7`, uusin julkaistu versio). OpenLP:hen ei tehdä
