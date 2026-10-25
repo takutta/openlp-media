@@ -79,6 +79,37 @@ OpenLP looks for community plugins in this folder even when it runs in portable 
 To move your songs, export them from the Songs plugin with **File → Export → Song** into a folder, and choose that
 folder in Song Folder.
 
+### Moving an existing library
+
+If you have used the original plugins for a long time, the folders on disk often no longer match the groups in
+OpenLP. `tools/migrate_database.py` (in the zip and in this repository) rebuilds the folders from a portable OpenLP,
+for example one copied from the old computer together with its files. The old folder is not changed.
+
+1. `plan <old> <new>` matches the database rows to the files by their sha256 hash (by name if the hash is missing)
+   and writes three files to the new folder: `plan.csv` (what goes where), `missing.csv` (database rows whose file
+   was not found, also looked for inside `.osz` service files) and `summary.txt`. Nothing is copied yet. You can
+   edit the plan: `copy` only does what `plan.csv` says.
+2. `copy <old> <new>` copies the files:
+   - images, media and presentations go to `Images`, `Media` and `Presentations`, in the database's group
+     structure;
+   - the songs of the database go to `Songs` as OpenLyrics files;
+   - files that are not in a database are sorted by type into `<type>/Unsorted/<original path>`, and service files
+     into `Services`;
+   - identical copies are left out (the shortest path wins), and so are other file types, saved web pages and
+     the folders of installed programs.
+
+   It also copies the rest of `Data` (themes, Bibles, custom slides and so on, but not the old libraries) and sets
+   the folder plugins active with relative library folders, so the new folder is a ready portable OpenLP.
+
+With `--fi` the folders, files and the plan are in Finnish (`Kuvat`, `suunnitelma.csv`…). Use it for both steps.
+
+The script needs OpenLP's source code, so run it in the development environment (see [Development](#development)):
+
+```sh
+.venv/Scripts/python tools/migrate_database.py plan E:/openlp E:/openlp-new
+.venv/Scripts/python tools/migrate_database.py copy E:/openlp E:/openlp-new
+```
+
 ## How it works
 
 ### Shared library
