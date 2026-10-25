@@ -28,6 +28,7 @@ from typing import Any, Iterator, List, Optional
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from openlp.core.common.applocation import AppLocation
 from openlp.core.common.i18n import UiStrings, get_natural_key, translate
 from openlp.core.common.settings import Settings
 from openlp.core.lib import check_item_selected
@@ -82,17 +83,35 @@ class FileSystemLibraryItem(MediaManagerItem):
         self._reload_timer.timeout.connect(self.on_refresh_click)
 
     @property
+    def portable_path(self) -> Optional[Path]:
+        """
+        The folder of a portable OpenLP (the parent of its data folder), or None if OpenLP is not portable
+        """
+        if self.settings.value('advanced/is portable'):
+            return AppLocation.get_data_path().parent
+        return None
+
+    @property
     def root_path(self) -> Optional[Path]:
         """
         The folder which is shown in the library, or None if it has not been set or does not exist
         """
         root_path = self.settings.value(self.settings_section + '/root folder')
-        if root_path and Path(root_path).is_dir():
-            return Path(root_path)
-        return None
+        if not root_path:
+            return None
+        root_path = Path(root_path)
+        if not root_path.is_absolute() and self.portable_path:
+            root_path = self.portable_path / root_path
+        return root_path if root_path.is_dir() else None
 
     @root_path.setter
     def root_path(self, path: Optional[Path]):
+        # A folder inside the portable folder is saved relative to it, so the whole folder can be moved
+        if path and self.portable_path:
+            try:
+                path = Path(path).relative_to(self.portable_path)
+            except ValueError:
+                pass
         self.settings.setValue(self.settings_section + '/root folder', path)
         self.reload()
 

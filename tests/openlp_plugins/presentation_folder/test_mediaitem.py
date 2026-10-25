@@ -281,8 +281,10 @@ def test_service_load_fixes_thumbnails(media_item):
     # GIVEN: A service item like the core loads it from a service file
     service_item = ServiceItem(None)
     service_item.icon = None
+    # An absolute path on every platform ("/absolute" is not absolute on Windows)
+    absolute = str(Path('/absolute/slide2.png').resolve())
     service_item.slides = [{'image': 'presentation_folder/thumbnails/abc/slide1.png'},
-                           {'image': '/absolute/slide2.png', 'thumbnail': '/absolute/slide2.png'}]
+                           {'image': absolute, 'thumbnail': absolute}]
 
     # WHEN: The service item is processed after loading
     with patch('openlp.plugins.presentation_folder.lib.mediaitem.AppLocation.get_data_path',
@@ -294,7 +296,7 @@ def test_service_load_fixes_thumbnails(media_item):
     assert service_item.icon is not None
     assert service_item.slides[0]['image'] == Path('/data/presentation_folder/thumbnails/abc/slide1.png')
     assert service_item.slides[0]['thumbnail'] == service_item.slides[0]['image']
-    assert service_item.slides[1]['image'] == '/absolute/slide2.png'
+    assert service_item.slides[1]['image'] == absolute
 
 
 def test_message_listener_uses_plugin_name(media_item):

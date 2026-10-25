@@ -309,6 +309,7 @@ def test_song_file_name(temp_folder):
     assert song_file_name('Song', folder) == folder / 'Song (3).xml'
 
 
+@pytest.mark.skipif(os.name == 'nt', reason='Windows has no Unix file permissions')
 def test_new_file_permissions(settings, temp_folder):
     """A new file can be read by others like any other new file, an existing file keeps its permissions"""
     file_path = Path(temp_folder) / 'song.xml'

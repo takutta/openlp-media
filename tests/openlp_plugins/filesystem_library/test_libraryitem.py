@@ -112,6 +112,36 @@ def test_get_file_list_and_search(library_item, root):
     assert result == [[str(root / 'Sub A' / 'Deep' / 'deep.txt'), 'deep.txt']]
 
 
+def test_portable_root_is_saved_relative(registry, settings, temp_folder):
+    """In a portable OpenLP a root folder inside the portable folder survives moving the whole folder"""
+    # GIVEN: A portable OpenLP with a library inside it and another one outside it
+    registry.register('main_window', MagicMock())
+    portable, moved = Path(temp_folder) / 'portable', Path(temp_folder) / 'moved'
+    (portable / 'Songs').mkdir(parents=True)
+    (moved / 'Songs').mkdir(parents=True)
+    outside = Path(temp_folder) / 'outside'
+    outside.mkdir()
+    settings.setValue('advanced/is portable', True)
+    settings.setValue('advanced/data path', portable / 'Data')
+    item = TextLibraryItem(None, make_plugin())
+
+    # WHEN: The folder inside the portable folder is chosen and the portable folder is moved
+    item.root_path = portable / 'Songs'
+    stored = settings.value('test_library/root folder')
+    settings.setValue('advanced/data path', moved / 'Data')
+
+    # THEN: The folder is saved relative and found in the new place
+    assert stored == Path('Songs')
+    assert item.root_path == moved / 'Songs'
+
+    # WHEN: A folder outside the portable folder is chosen
+    item.root_path = outside
+
+    # THEN: It is saved as it is
+    assert settings.value('test_library/root folder') == outside
+    assert item.root_path == outside
+
+
 def test_no_root_shows_placeholder(registry, settings):
     """Without a root folder a disabled placeholder is shown"""
     # GIVEN: A library item without a root folder
