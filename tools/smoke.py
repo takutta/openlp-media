@@ -1,0 +1,253 @@
+# -*- coding: utf-8 -*-
+
+##########################################################################
+# OpenLP - Open Source Lyrics Projection                                 #
+# ---------------------------------------------------------------------- #
+# Copyright (c) 2008 OpenLP Developers                                   #
+# ---------------------------------------------------------------------- #
+# This program is free software: you can redistribute it and/or modify   #
+# it under the terms of the GNU General Public License as published by   #
+# the Free Software Foundation, either version 3 of the License, or      #
+# (at your option) any later version.                                    #
+#                                                                        #
+# This program is distributed in the hope that it will be useful,        #
+# but WITHOUT ANY WARRANTY; without even the implied warranty of         #
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the          #
+# GNU General Public License for more details.                           #
+#                                                                        #
+# You should have received a copy of the GNU General Public License      #
+# along with this program.  If not, see <https://www.gnu.org/licenses/>. #
+##########################################################################
+"""
+Start OpenLP with the folder plugins active, exercise them and print the results. This is not a pytest test, run
+it by hand when the plugins or OpenLP have changed (see AGENTS.md):
+
+    QT_QPA_PLATFORM=offscreen QTWEBENGINE_CHROMIUM_FLAGS=--no-sandbox \\
+        .venv/Scripts/python tools/smoke.py <empty work folder>
+
+OpenLP is run from the upstream submodule. The plugins are installed like a user installs them, as community
+plugins in the contrib folder of a data folder inside the work folder. The work folder also holds the portable
+settings and the library, and is deleted first.
+"""
+import faulthandler
+import os
+import shutil
+import sys
+import threading
+import traceback
+from datetime import date
+from pathlib import Path
+
+work = Path(sys.argv[1]).resolve()
+repo = Path(__file__).resolve().parents[1]
+upstream = repo / 'upstream'
+sys.path.insert(0, str(upstream))
+sys.argv = ['run_openlp.py', '-p', '-P', str(work / 'portable'), '-w', '-e', '-l', 'debug']
+if work.exists() and any(work.iterdir()) and not (work / 'portable').is_dir():
+    sys.exit(f'{work} is not empty and was not made by this script, refusing to delete it')
+shutil.rmtree(work, ignore_errors=True)
+# OpenLP looks for community plugins in the user's data folder, even when it is portable
+os.environ['APPDATA'] = str(work / 'appdata')
+os.environ['XDG_DATA_HOME'] = str(work / 'appdata')
+library = work / 'library'
+(library / 'images' / 'Easter').mkdir(parents=True)
+(library / 'presentations').mkdir(parents=True)
+(library / 'media').mkdir(parents=True)
+(library / 'songs').mkdir(parents=True)
+shutil.copy(upstream / 'tests/resources/songs/openlyrics/What a friend we have in Jesus.xml',
+            library / 'songs' / 'friend.xml')
+shutil.copy(upstream / 'tests/resources/presentations/pdf_test1.pdf', library / 'presentations' / 'welcome.pdf')
+(work / 'portable' / 'Data').mkdir(parents=True)
+
+from openlp.core.common.applocation import AppLocation  # noqa: E402
+from openlp.core.common.settings import Settings, __version__ as settings_version  # noqa: E402
+from openlp.core.version import get_version  # noqa: E402
+
+if 'PySide6' in sys.modules:
+    from PySide6 import QtCore, QtGui, QtWidgets
+else:
+    from PyQt5 import QtCore, QtGui, QtWidgets
+
+contrib = AppLocation.get_directory(AppLocation.DataDir) / 'contrib' / 'plugins'
+for plugin_path in (repo / 'plugins').iterdir():
+    shutil.copytree(plugin_path, contrib / plugin_path.name, ignore=shutil.ignore_patterns('__pycache__', '*.ts'))
+
+Settings.setDefaultFormat(Settings.IniFormat)
+Settings.set_filename(work / 'portable' / 'Data' / 'OpenLP.ini')
+settings = Settings()
+settings.setValue('core/has run wizard', True)
+settings.setValue('settings/version', settings_version)
+settings.setValue('core/show splash', False)
+settings.setValue('core/application version', get_version()['version'])
+settings.setValue('core/language', 'fi')
+# Skip the daily version checks, which open a message box about new versions of OpenLP and the web remote
+settings.setValue('core/last version test', date.today().strftime('%Y-%m-%d'))
+settings.setValue('api/last version test', date.today().strftime('%Y-%m-%d'))
+for name, folder in (('image_folder', 'images'), ('presentation_folder', 'presentations'),
+                     ('media_folder', 'media'), ('song_folder', 'songs')):
+    settings.setValue(f'{name}/status', 1)
+    settings.setValue(f'{name}/root folder', library / folder)
+settings.sync()
+del settings
+
+results = []
+
+
+def on_timeout():
+    print('WATCHDOG TIMEOUT', flush=True)
+    faulthandler.dump_traceback(all_threads=True)
+    os._exit(3)
+
+
+watchdog = threading.Timer(120, on_timeout)
+watchdog.daemon = True
+watchdog.start()
+
+
+def check(name, condition):
+    results.append((name, bool(condition)))
+    print(('OK   ' if condition else 'FAIL ') + name, flush=True)
+
+
+def wait(seconds):
+    loop = QtCore.QEventLoop()
+    QtCore.QTimer.singleShot(int(seconds * 1000), loop.quit)
+    loop.exec()
+
+
+def find_item(media_item, path):
+    iterator = QtWidgets.QTreeWidgetItemIterator(media_item.list_view)
+    while iterator.value():
+        if iterator.value().data(0, QtCore.Qt.ItemDataRole.UserRole) == path:
+            return iterator.value()
+        iterator += 1
+
+
+def exercise():
+    from openlp.core.common.registry import Registry
+    from openlp.core.lib.serviceitem import ItemCapabilities
+    try:
+        pm = Registry().get('plugin_manager')
+        plugins = {name: pm.get_plugin_by_name(name) for name in ('image_folder', 'presentation_folder',
+                                                                  'media_folder', 'song_folder')}
+        for name, plugin in plugins.items():
+            check(f'{name} active with media item', plugin and plugin.is_active() and plugin.media_item)
+        if (repo / 'plugins' / 'image_folder' / 'i18n' / 'fi.qm').exists():
+            check('finnish plugin name', plugins['image_folder'].name_strings['singular'] == 'Kuvakansio')
+            check('finnish base class text',
+                  plugins['image_folder'].media_item.choose_root_action.text() == 'Valitse kansio')
+        else:
+            print('SKIP finnish texts, the .qm files have not been compiled', flush=True)
+        images = plugins['image_folder'].media_item
+        # Images appear through the file system watcher
+        for name in ('a.png', 'Easter/b.png', 'Easter/c.png'):
+            image = QtGui.QImage(64, 48, QtGui.QImage.Format.Format_RGB32)
+            image.fill(QtGui.QColor('green'))
+            image.save(str(library / 'images' / name))
+        wait(2)
+        check('watcher picked up images', len(images.get_file_list()) == 3)
+        service_manager = Registry().get('service_manager')
+        live = Registry().get('live_controller')
+        find_item(images, library / 'images' / 'Easter').setSelected(True)
+        images.on_add_click()
+        check('image folder added to service', len(service_manager.service_items) == 1)
+        image_item = service_manager.service_items[0]['service_item']
+        check('image service item has 2 slides', len(image_item.slides) == 2)
+        images.go_live(str(library / 'images' / 'a.png'))
+        check('image live', live.service_item and live.service_item.name == 'image_folder')
+        presentations = plugins['presentation_folder'].media_item
+        pdf = library / 'presentations' / 'welcome.pdf'
+        check('pdf listed', presentations.get_file_list() == [pdf])
+        check('display types', presentations.display_type_combo_box.count() >= 1)
+        presentations.add_to_service(find_item(presentations, pdf))
+        check('pdf added to service', len(service_manager.service_items) == 2)
+        pdf_item = service_manager.service_items[1]['service_item']
+        check('pdf service item is a command', pdf_item.is_command() and len(pdf_item.slides) == 3)
+        # Send the PDF from the service live, the message listener turns it into images
+        service_manager.set_item(1)
+        service_manager.make_live()
+        wait(1)
+        check('pdf live as images', live.service_item and live.service_item.is_image()
+              and len(live.service_item.slides) == 3)
+        # Songs are added to the service and edited with the real song editor
+        songs = plugins['song_folder'].media_item
+        song_path = library / 'songs' / 'friend.xml'
+        songs.add_to_service(find_item(songs, song_path))
+        check('song added to service', len(service_manager.service_items) == 3)
+        song_item = service_manager.service_items[2]['service_item']
+        check('song can be edited', song_item.is_capable(ItemCapabilities.CanEdit) and
+              song_item.edit_id == str(song_path))
+
+        def edit_title():
+            songs.edit_song_form.title_edit.setText('Edited friend')
+            songs.edit_song_form.accept()
+            return QtWidgets.QDialog.DialogCode.Accepted
+        songs.edit_song_form.exec = edit_title
+        service_manager.add_service_item(songs.on_remote_edit(song_item.edit_id), replace=2)
+        check('song edited in service', service_manager.service_items[2]['service_item'].title == 'Edited friend')
+        check('song file written', b'Edited friend' in song_path.read_bytes() and
+              b'<ccliNo>27714</ccliNo>' in song_path.read_bytes())
+        check('song renamed in library', find_item(songs, song_path).text(0) == 'Edited friend')
+        # Save and load the service
+        service_file = work / 'test.osz'
+        service_manager.set_file_name(service_file)
+        service_manager.save_file()
+        check('service saved', service_file.exists())
+        service_manager.new_file()
+        service_manager.load_file(service_file)
+        wait(1)
+        items = [item['service_item'] for item in service_manager.service_items]
+        check('service loaded', [item.name for item in items] == ['image_folder', 'presentation_folder',
+                                                                  'song_folder'])
+        check('song editable after load', items[2].edit_id == str(song_path))
+        check('icons after load', all(item.icon is not None and not item.icon.isNull() for item in items))
+        thumbnail = Path(items[1].slides[0]['image'])
+        check(f'pdf thumbnails after load ({thumbnail})', thumbnail.is_absolute() and thumbnail.exists())
+        check('image valid after load', items[0].is_valid and len(items[0].slides) == 2)
+        service_manager.set_item(1)
+        service_manager.make_live()
+        wait(1)
+        check('loaded pdf live as images', live.service_item and live.service_item.is_image())
+        # Remote API search and live
+        from openlp.core.api.versions.v2.plugins import search
+        found = search('presentation_folder', 'welc')
+        check('remote search', found == [[str(pdf), 'welcome.pdf']])
+        getattr(images, 'image_folder_go_live').emit([str(library / 'images' / 'Easter' / 'c.png'), True])
+        wait(0.5)
+        check('remote live', live.service_item.title == 'c.png')
+    except Exception:
+        traceback.print_exc()
+        check('no exception', False)
+    failed = [name for name, ok in results if not ok]
+    print('SMOKE RESULT:', 'FAILED ' + ', '.join(failed) if failed else 'ALL OK', flush=True)
+    sys.stdout.flush()
+    os._exit(1 if failed else 0)
+
+
+from openlp.core import app as app_module  # noqa: E402
+
+original_run = app_module.OpenLP.run
+
+
+def start_when_ready():
+    """
+    Start the checks once the plugins have been set up. The start up takes a while on a cold or slow machine.
+    """
+    from openlp.core.common.registry import Registry
+    services = getattr(Registry(), 'service_list', {})
+    plugin = services['plugin_manager'].get_plugin_by_name('song_folder') if 'plugin_manager' in services else None
+    if plugin and plugin.media_item and 'service_manager' in services:
+        # Let the main window finish what it is doing
+        QtCore.QTimer.singleShot(1000, exercise)
+    else:
+        QtCore.QTimer.singleShot(500, start_when_ready)
+
+
+def run(self, args, application):
+    QtCore.QTimer.singleShot(500, start_when_ready)
+    return original_run(self, args, application)
+
+
+app_module.OpenLP.run = run
+os.chdir(upstream)
+app_module.main()

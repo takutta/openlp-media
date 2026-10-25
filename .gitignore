@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv*/
+# Compiled translations are made by tools/build.py
+*.qm
+dist/
+build/

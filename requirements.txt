@@ -1,0 +1,29 @@
+# What the tests need to run OpenLP 3.1 (the upstream submodule) from source, see AGENTS.md
+alembic
+beautifulsoup4
+chardet
+dbus-python; platform_system == "Linux"
+distro; platform_system == "Linux"
+flask
+flask-cors
+lxml
+Mako
+packaging
+platformdirs
+pymediainfo >= 2.2
+PyQt5 >= 5.12
+PyQtWebEngine
+pywin32; platform_system == "Windows"
+QtAwesome
+qrcode
+requests
+SQLAlchemy < 2.1
+waitress
+websockets
+# PyMuPDF 2 crashes next to PyQt5 on Windows
+PyMuPDF < 1.25
+python-vlc
+# Tests and tools
+pytest
+pytest-qt
+flake8

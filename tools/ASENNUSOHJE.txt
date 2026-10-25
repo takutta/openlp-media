@@ -1,0 +1,82 @@
+OpenLP:n kansiopluginit
+=======================
+
+Neljä uutta pluginia OpenLP:hen. Ne näyttävät levyllä olevan kansion sellaisenaan,
+ilman OpenLP:n omaa tietokantaa: valitsemasi kansio on kirjasto.
+
+  Mediakansio          ääni- ja videotiedostot
+  Kuvakansio           kuvat
+  Presentaatiokansio   PDF-, LibreOffice- ja PowerPoint-tiedostot
+  Laulukansio          OpenLyrics-laulutiedostot (*.xml)
+
+Vaatii OpenLP:n version 3.1.7 tai uudemman.
+
+
+Asennus asennusohjelmalla (Windows)
+-----------------------------------
+
+1. Sulje OpenLP.
+2. Käynnistä openlp-folder-plugins-<versio>-setup.exe ja seuraa ohjeita.
+   Asennus ei tarvitse järjestelmänvalvojan oikeuksia.
+   Jos Windows näyttää varoituksen "Windows suojasi tietokonettasi", valitse
+   "Lisätietoja" ja "Suorita silti". Varoitus tulee, koska asennusohjelmaa
+   ei ole allekirjoitettu.
+3. Jatka kohdasta "Pluginien käyttöönotto".
+
+Pluginit poistetaan Windowsin asetuksista: Sovellukset > Asennetut sovellukset >
+"OpenLP:n kansiopluginit" > Poista.
+
+
+Asennus zip-paketista
+---------------------
+
+1. Sulje OpenLP.
+2. Avaa OpenLP:n plugin-kansio. Jos kansiota ei ole, luo se.
+     Windows:  %APPDATA%\openlp\data\contrib\plugins
+               (kirjoita polku Resurssienhallinnan osoiteriville)
+     Linux:    ~/.local/share/openlp/contrib/plugins
+     macOS:    ~/Library/Application Support/openlp/Data/contrib/plugins
+3. Kopioi zip-paketin plugins-kansion sisältö (viisi kansiota, esimerkiksi
+   song_folder) plugin-kansioon. Kansiot tulevat suoraan plugin-kansioon,
+   esimerkiksi ...\contrib\plugins\song_folder.
+4. Jatka kohdasta "Pluginien käyttöönotto".
+
+Pluginit poistetaan poistamalla nämä viisi kansiota.
+
+Myös portable-OpenLP etsii pluginit yllä olevasta kansiosta, joten ne
+asennetaan Windowsin käyttäjäkohtaisesti, eivät muistitikulle.
+
+
+Pluginien käyttöönotto
+----------------------
+
+1. Käynnistä OpenLP.
+2. Valitse Asetukset > Moduulien hallinta.
+3. Valitse luettelosta haluamasi plugin (esimerkiksi Laulukansio) ja vaihda
+   sen tilaksi "Käytössä". Uudet pluginit ovat aluksi pois käytöstä.
+   Jos otat käyttöön Presentaatiokansion, poista käytöstä vanha
+   Presentaatiot-plugin. Muut vanhat pluginit (Media, Kuvat, Laulut) voivat
+   olla päällä tai pois, mutta älä poista niitä OpenLP:stä, koska uudet
+   pluginit käyttävät niiden koodia.
+4. Uusi kirjasto näkyy OpenLP:n vasemmassa reunassa. Valitse kirjaston
+   työkalupalkista "Valitse kansio" ja valitse kansio, jossa tiedostosi ovat.
+
+
+Käyttö lyhyesti
+---------------
+
+- Kirjasto näyttää kansion puuna ja päivittyy itsestään, kun kansioon lisätään
+  tiedostoja esimerkiksi Resurssienhallinnasta, OneDrivestä tai Dropboxista.
+- Lisääminen kopioi tiedostot valittuun kansioon, raahaus kirjaston sisällä
+  siirtää ne ja poisto siirtää ne roskakoriin. Mitään ei ylikirjoiteta.
+- Kansion lisääminen Listaan lisää kaikki sen tiedostot.
+- Laulukansiossa on haku, laulujen muokkaus ja uuden laulun teko. Laulun
+  viereen tallennettu samanniminen äänitiedosto (Laulu.mp3 tiedostolle
+  Laulu.xml) soi taustamusiikkina.
+- Vanhat laulut saa siirrettyä viemällä ne Laulut-pluginista:
+  Tiedosto > Vie tiedostoksi > Laulut. Valitse vientikansioksi Laulukansion
+  kansio. Laulut tallentuvat OpenLyrics-tiedostoina.
+
+
+Lisätietoja ja lähdekoodi: https://github.com/takutta/openlp-folder-plugins
+Lisenssi: GNU General Public License, versio 3 tai uudempi (LICENSE.txt).
