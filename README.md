@@ -149,7 +149,15 @@ songs. Other worship programs can read it, and so can you.
 - A few remote API calls only work for the original plugins, because OpenLP's core checks the plugin name: media
   play/pause/stop and transposing the live song.
 - Song Folder uses the settings page of the Songs plugin, so the page appears twice if both are active.
-- Translations: Finnish only so far.
+
+## Languages
+
+The plugins are written in English and translated into Finnish. They follow the language chosen in OpenLP:
+Finnish shows the Finnish translation, and every other language shows English. The install guide and the Windows
+installer are in English and Finnish, and the installer asks for the language first.
+
+To add a translation, add `<language>.ts` (for example `sv.ts`) to every `plugins/*/i18n` folder.
+`tools/build.py` compiles every `.ts` file into a `.qm` file that OpenLP loads.
 
 ## Development
 
