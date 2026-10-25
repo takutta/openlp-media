@@ -271,6 +271,15 @@ class FileSystemLibraryItem(MediaManagerItem):
         """
         pass
 
+    def related_files(self, file_path: Path) -> List[Path]:
+        """
+        Files which belong to a library file, e.g. the audio file of a song. They are not listed, but they are copied,
+        moved and deleted together with the file.
+
+        :param file_path: The library file
+        """
+        return []
+
     # Loading the folder
 
     def iter_files(self, folder: Optional[Path] = None) -> Iterator[Path]:
@@ -582,6 +591,9 @@ class FileSystemLibraryItem(MediaManagerItem):
                 added.append(target_path)
             except OSError as error:
                 skipped.append('{name} ({error})'.format(name=file_path.name, error=error))
+                continue
+            if not file_path.is_dir():
+                skipped += self._transfer_related_files(file_path, destination, shutil.copy2)
         if file_paths:
             self.settings.setValue(self.settings_section + '/last directory', Path(file_paths[0]).parent)
         self.reload(select_paths=added)
@@ -612,12 +624,42 @@ class FileSystemLibraryItem(MediaManagerItem):
                                                      '"{name}" already exists in the target folder.'
                                                      ).format(name=path.name))
                 continue
+            related = [] if path.is_dir() else self.related_files(path)
             try:
                 shutil.move(str(path), str(target_path))
                 moved.append(target_path)
             except OSError as error:
                 critical_error_message_box(message=str(error))
+                continue
+            skipped = self._transfer_related_files(path, destination, shutil.move, related)
+            if skipped:
+                critical_error_message_box(message=translate('OpenLP.FileSystemLibraryItem',
+                                                             'The following files were not moved:\n{names}'
+                                                             ).format(names='\n'.join(skipped)))
         self.reload(select_paths=moved)
+
+    def _transfer_related_files(self, file_path: Path, destination: Path, transfer,
+                                related: Optional[List[Path]] = None) -> List[str]:
+        """
+        Copy or move the related files of a file into a folder. Nothing is overwritten.
+
+        :param file_path: The library file
+        :param destination: The folder to put the files into
+        :param transfer: :func:`shutil.copy2` or :func:`shutil.move`
+        :param related: The related files, if they were looked up before the library file was moved
+        :return: The names of the files which could not be copied or moved
+        """
+        skipped = []
+        for related_path in (self.related_files(file_path) if related is None else related):
+            target_path = destination / related_path.name
+            if target_path.exists():
+                skipped.append(related_path.name)
+                continue
+            try:
+                transfer(str(related_path), str(target_path))
+            except OSError as error:
+                skipped.append('{name} ({error})'.format(name=related_path.name, error=error))
+        return skipped
 
     def on_delete_click(self):
         """
@@ -639,10 +681,13 @@ class FileSystemLibraryItem(MediaManagerItem):
             return
         failed = []
         for path in paths:
+            related = [] if path.is_dir() else self.related_files(path)
             for file_path in (self.iter_files(path) if path.is_dir() else [path]):
                 self.delete_item(file_path)
             if not move_to_trash(path):
                 failed.append(path.name)
+                continue
+            failed += [related_path.name for related_path in related if not move_to_trash(related_path)]
         self.reload()
         if failed:
             critical_error_message_box(message=translate('OpenLP.FileSystemLibraryItem',

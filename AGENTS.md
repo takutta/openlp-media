@@ -53,6 +53,9 @@ piilotetut ohitetaan). Kuva- ja lauluplugin voivat käyttää samaa luokkaa.
 - Puun itemeissä `UserRole` = `Path`, `ItemTypeRole` (`UserRole + 1`) = `'folder'` / `'file'`.
 - Aliluokka toteuttaa `is_supported_file()` ja `generate_slide_data()`. Lisäksi se voi ylikirjoittaa
   `load_item()`- ja `delete_item()`-metodit.
+- `related_files(tiedosto)` (oletus tyhjä) palauttaa tiedostoon kuuluvat tiedostot, jotka eivät näy puussa (esim.
+  laulun äänitiedosto). Ne kopioidaan, siirretään ja siirretään roskakoriin tiedoston mukana. Mitään ei
+  ylikirjoiteta: jos kohteessa on jo samanniminen tiedosto, se jätetään paikalleen ja käyttäjälle kerrotaan.
 - `folder_files(kansio)` palauttaa kansion suoraan sisältämät tuetut tiedostot samassa järjestyksessä kuin puussa.
 - `on_add_click()`: jos `single_service_item` on False, valittu kansio lisää jokaisen tiedostonsa Listaan erikseen.
 - `create_item_from_id()` (remote-API) antaa tyypin vain juurikansion sisällä oleville poluille, joten remotella ei
@@ -158,7 +161,13 @@ tietokantaa ei ole.
     vaikutusta laulukansioon (SongSelect, "update service on edit", "add song from service").
   - Taustamusiikki: laulun vieressä oleva samanniminen äänitiedosto (`Laulu.mp3` tiedostolle `Laulu.xml`,
     `get_supported_media_suffix()`-äänipäätteet). Vaatii State-nimen `media`. `songs/auto play audio` toimii
-    ytimessä. Äänitiedosto ei siirry eikä poistu laulun mukana, kun laulua raahataan tai poistetaan kirjastossa.
+    ytimessä. Jos samannimisiä äänitiedostoja on useita, ensimmäinen soitetaan. Äänitiedostot ovat laulun
+    `related_files()`, joten ne kopioituvat, siirtyvät ja poistuvat laulun mukana.
+  - Lomakkeen välilehdellä "Taustamusiikki" voi valita äänitiedoston tai poistaa sen. Tallennettaessa
+    (`save_background_audio()`) valittu tiedosto kopioidaan laulun viereen laulun nimellä, ja laulun muut
+    äänitiedostot siirretään roskakoriin. Jos taustamusiikkia ei muutettu, mitään ei tehdä. Uusi laulu ei koske
+    valmiiksi samannimisiin äänitiedostoihin, ellei ääntä valittu. Jos vaihto epäonnistuu, laulu on silti
+    tallennettu ja käyttäjälle kerrotaan.
   - Teema: OpenLyricsissä ei ole teemaa, joten se on tiedostossa omassa nimiavaruudessaan
     `<openlp:theme xmlns:openlp="http://openlp.org/ns/song-folder">Nimi</openlp:theme>` (`songfile.THEME_TAG`).
     Muut ohjelmat ohittavat sen. Tyhjä teema = oletus.
@@ -211,8 +220,6 @@ tietokantaa ei ole.
 - Puuttuu vielä:
   - Säkeen muokkaus erillisessä dialogissa (songs-pluginin `EditVerseForm`). Lomakkeen yksi tekstikenttä kattaa
     saman, joten tätä ei ehkä tarvita.
-  - Taustamusiikin valinta lomakkeesta (nyt tiedosto pitää laittaa laulun viereen käsin) ja sen siirto/poisto
-    laulun mukana.
   - Remote-API:n transponointi (`/api/v2/plugins/songs/transpose-live-item`) ei toimi, koska ydin tarkistaa
     nimen (`name != 'songs'`). Sama tilanne kuin media_folderin play/pause-kutsuissa.
 
