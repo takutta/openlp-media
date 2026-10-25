@@ -21,7 +21,7 @@
 """
 Build the release files into dist/:
 
-    openlp-folder-plugins-<version>.zip         the plugins and the Finnish install guide, installed by hand
+    openlp-folder-plugins-<version>.zip         the plugins and the install guides, installed by hand
     openlp-folder-plugins-<version>-setup.exe   the Windows installer, if Inno Setup (ISCC) is installed
 
     python tools/build.py [--translations-only]
@@ -78,8 +78,9 @@ def stage() -> Path:
         shutil.copytree(plugin_path, stage_dir / 'plugins' / plugin_path.name,
                         ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '*.ts'))
     # Notepad and the installer both read Windows line endings
-    guide = (REPO / 'tools' / 'ASENNUSOHJE.txt').read_text(encoding='utf-8').replace('<versio>', VERSION)
-    (stage_dir / 'ASENNUSOHJE.txt').write_text(guide, encoding='utf-8-sig', newline='\r\n')
+    for name, placeholder in (('INSTALL.txt', '<version>'), ('ASENNUSOHJE.txt', '<versio>')):
+        guide = (REPO / 'tools' / name).read_text(encoding='utf-8').replace(placeholder, VERSION)
+        (stage_dir / name).write_text(guide, encoding='utf-8-sig', newline='\r\n')
     shutil.copy(REPO / 'LICENSE', stage_dir / 'LICENSE.txt')
     return stage_dir
 

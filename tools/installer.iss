@@ -4,7 +4,7 @@
 
 [Setup]
 AppId={{6F0B3C3E-2E55-4C8B-9C0F-6D1C5E7A9B21}
-AppName=OpenLP:n kansiopluginit
+AppName={cm:AppName}
 AppVersion={#AppVersion}
 AppPublisher=takutta
 AppPublisherURL=https://github.com/takutta/openlp-folder-plugins
@@ -15,17 +15,24 @@ DisableReadyPage=yes
 PrivilegesRequired=lowest
 ; The uninstaller is kept out of the plugin folder, which OpenLP searches for plugins
 UninstallFilesDir={userappdata}\openlp\data\contrib\folder-plugins-uninstall
-UninstallDisplayName=OpenLP:n kansiopluginit
-InfoAfterFile={#StageDir}\ASENNUSOHJE.txt
+UninstallDisplayName={cm:AppName}
 OutputDir={#OutputDir}
 OutputBaseFilename=openlp-folder-plugins-{#AppVersion}-setup
 WizardStyle=modern
+; The language is asked first, the language of Windows is preselected
+ShowLanguageDialog=yes
 Compression=lzma2
 SolidCompression=yes
 
 [Languages]
-Name: "fi"; MessagesFile: "compiler:Languages\Finnish.isl"
-Name: "en"; MessagesFile: "compiler:Default.isl"
+Name: "en"; MessagesFile: "compiler:Default.isl"; InfoAfterFile: "{#StageDir}\INSTALL.txt"
+Name: "fi"; MessagesFile: "compiler:Languages\Finnish.isl"; InfoAfterFile: "{#StageDir}\ASENNUSOHJE.txt"
+
+[CustomMessages]
+en.AppName=OpenLP Folder Plugins
+fi.AppName=OpenLP:n kansiopluginit
+en.OpenLPRunning=Close OpenLP and run the installer again.
+fi.OpenLPRunning=Sulje OpenLP ja käynnistä asennus uudelleen.
 
 [InstallDelete]
 ; Remove the files of an earlier version first, so that no stale modules are left behind
@@ -64,7 +71,7 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   if IsOpenLPRunning() then
-    Result := 'Sulje OpenLP ja käynnistä asennus uudelleen. / Close OpenLP and run the installer again.'
+    Result := CustomMessage('OpenLPRunning')
   else
     Result := '';
 end;

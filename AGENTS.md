@@ -25,7 +25,8 @@ plugin_tests/            pytest-testit pluginikohtaisesti
 conftest.py              liittää pluginit OpenLP:hen testejä varten (alla)
 tools/build.py           käännökset, zip ja exe kansioon dist/
 tools/installer.iss      Inno Setup -asennusohjelma
-tools/ASENNUSOHJE.txt    suomenkielinen asennusohje, zipissä ja asennusohjelman lopussa
+tools/INSTALL.txt        englanninkielinen asennusohje, zipissä ja asennusohjelman lopussa
+tools/ASENNUSOHJE.txt    sama suomeksi; pidä ohjeet samansisältöisinä
 tools/smoke.py           OpenLP:n käynnistävä smoke-testi
 upstream/                OpenLP (submoduuli)
 VERSION                  pluginien versio
@@ -351,13 +352,15 @@ QT_QPA_PLATFORM=offscreen .venv/Scripts/python -m pytest          # Linuxissa .v
 
 1. Päivitä `VERSION`.
 2. `.venv/Scripts/python tools/build.py` tekee kansioon `dist/` tiedostot
-   `openlp-folder-plugins-<versio>.zip` (pluginit, `ASENNUSOHJE.txt`, `LICENSE.txt`) ja
+   `openlp-folder-plugins-<versio>.zip` (pluginit, `INSTALL.txt`, `ASENNUSOHJE.txt`, `LICENSE.txt`) ja
    `openlp-folder-plugins-<versio>-setup.exe`, jos Inno Setup on asennettu (`scoop install extras/inno-setup`).
 3. Asennusohjelma asentaa ilman järjestelmänvalvojan oikeuksia kansioon `{userappdata}\openlp\data\contrib\plugins`.
    Se poistaa ensin vanhan version kansiot ja kieltäytyy asentamasta, jos OpenLP on käynnissä (WMI-kysely, ei
    `tasklist | find`, koska Git Bashin `find` osuu PATHissa ensin). Poisto-ohjelma on kansiossa
-   `contrib\folder-plugins-uninstall`, koska OpenLP etsii plugineja `plugins`-kansiosta. Kieli on suomi tai
-   englanti.
+   `contrib\folder-plugins-uninstall`, koska OpenLP etsii plugineja `plugins`-kansiosta. Asennusohjelma kysyy
+   ensin kielen (englanti tai suomi, Windowsin kieli valmiiksi valittuna). Kieliriippuvat tekstit ovat
+   `[CustomMessages]`-osiossa ja lopun ohje `[Languages]`-rivin `InfoAfterFile`-arvona. Hiljaisessa testissä kielen
+   saa valittua `/LANG=en` tai `/LANG=fi`.
 4. Hiljainen testi: `setup.exe /VERYSILENT /SUPPRESSMSGBOXES` ja
    `contrib\folder-plugins-uninstall\unins000.exe /VERYSILENT`. Se asentaa oikeaan profiiliin, joten poista
    asennus testin jälkeen.

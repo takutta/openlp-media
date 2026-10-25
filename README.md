@@ -50,7 +50,8 @@ Point the plugin at a folder. Whatever is in that folder is the library.
 ## Installation
 
 Download the latest release from the [Releases](https://github.com/takutta/openlp-folder-plugins/releases) page.
-Both files come with a Finnish install guide (`ASENNUSOHJE.txt`).
+Both files come with an install guide in English (`INSTALL.txt`) and Finnish (`ASENNUSOHJE.txt`).
+The installer asks for the language first.
 
 **Windows installer:** close OpenLP and run `openlp-folder-plugins-<version>-setup.exe`. It needs no
 administrator rights. Windows may warn that the installer is not signed: choose "More info" and "Run anyway".

@@ -1,0 +1,81 @@
+OpenLP Folder Plugins
+=====================
+
+Four new plugins for OpenLP. They show a folder on disk as it is, without
+OpenLP's own database: the folder you choose is the library.
+
+  Media Folder          audio and video files
+  Image Folder          images
+  Presentation Folder   PDF, LibreOffice and PowerPoint files
+  Song Folder           OpenLyrics song files (*.xml)
+
+Requires OpenLP 3.1.7 or later.
+
+
+Installing with the installer (Windows)
+---------------------------------------
+
+1. Close OpenLP.
+2. Run openlp-folder-plugins-<version>-setup.exe and follow the steps.
+   The installer needs no administrator rights.
+   If Windows shows "Windows protected your PC", choose "More info" and
+   "Run anyway". The warning appears because the installer is not signed.
+3. Continue from "Enabling the plugins".
+
+To uninstall, open Windows Settings: Apps > Installed apps >
+"OpenLP Folder Plugins" > Uninstall.
+
+
+Installing from the zip
+-----------------------
+
+1. Close OpenLP.
+2. Open OpenLP's plugin folder. Create it if it doesn't exist.
+     Windows:  %APPDATA%\openlp\data\contrib\plugins
+               (type the path in the address bar of File Explorer)
+     Linux:    ~/.local/share/openlp/contrib/plugins
+     macOS:    ~/Library/Application Support/openlp/Data/contrib/plugins
+3. Copy the contents of the plugins folder in the zip (five folders, such as
+   song_folder) into the plugin folder. The folders go directly into the
+   plugin folder, for example ...\contrib\plugins\song_folder.
+4. Continue from "Enabling the plugins".
+
+To uninstall, delete these five folders.
+
+Portable OpenLP also looks for plugins in the folder above, so they are
+installed for the Windows user, not on the USB stick.
+
+
+Enabling the plugins
+--------------------
+
+1. Start OpenLP.
+2. Choose Settings > Manage Plugins.
+3. Select the plugin you want (for example Song Folder) and tick
+   "Active". New plugins start inactive.
+   If you enable Presentation Folder, set the original Presentations plugin
+   to inactive. The other original plugins (Media, Images, Songs) can be
+   active or not, but don't remove them from OpenLP, because the new plugins
+   use their code.
+4. The new library appears on the left side of OpenLP. Click "Choose folder"
+   in the library's toolbar and pick the folder where your files are.
+
+
+Quick guide
+-----------
+
+- The library shows the folder as a tree and updates itself when files are
+  added to the folder, for example from File Explorer, OneDrive or Dropbox.
+- Adding copies files into the selected folder, dragging inside the library
+  moves them and deleting moves them to the recycle bin. Nothing is ever
+  overwritten.
+- Adding a folder to the service adds all its files.
+- Song Folder has search, song editing and new songs. An audio file with the
+  same name next to a song (Song.mp3 for Song.xml) plays as background audio.
+- To move your old songs, export them from the Songs plugin:
+  File > Export > Song. Choose the Song Folder's folder as the export folder.
+  The songs are saved as OpenLyrics files.
+
+
+More information and source code: https://github.com/takutta/openlp-folder-plugins
+License: GNU General Public License, version 3 or later (LICENSE.txt).
