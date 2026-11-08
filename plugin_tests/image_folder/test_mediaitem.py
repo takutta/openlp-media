@@ -76,7 +76,9 @@ def media_item(registry, settings, image_root, data_path):
     item = ImageFolderMediaItem(None, plugin)
     item.initialise()
     yield item
+    item._watcher.blockSignals(True)
     item._reload_timer.stop()
+    item._icon_timer.stop()
     ActionList.shortcut_map = {}
 
 
@@ -97,11 +99,19 @@ def test_only_images_are_listed(media_item, image_root):
 
 
 def test_thumbnails_are_created(media_item, image_root, data_path):
-    """Loading the library creates a thumbnail for each image in the data folder of the plugin"""
+    """The thumbnails are made after the tree has loaded, in the data folder of the plugin"""
+    with patch('openlp.plugins.image_folder.lib.mediaitem.create_thumb') as create_thumb:
+        media_item.reload()
+    create_thumb.assert_not_called()
+    assert media_item._icon_timer.isActive()
+
+    media_item.load_pending_icons(budget=60)
+
     thumbnail_path = media_item.generate_thumbnail_path(image_root / 'b 2.PNG')
     assert thumbnail_path.parent == data_path / 'image_folder' / 'thumbnails'
     assert thumbnail_path.suffix == '.png'
     assert thumbnail_path.exists()
+    assert not media_item._icon_timer.isActive()
     assert not find_item(media_item, image_root / 'b 2.PNG').icon(0).isNull()
 
 

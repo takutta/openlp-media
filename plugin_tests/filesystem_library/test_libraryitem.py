@@ -74,6 +74,7 @@ def library_item(registry, settings, root):
     item = TextLibraryItem(None, make_plugin())
     item.initialise()
     yield item
+    item._watcher.blockSignals(True)
     item._reload_timer.stop()
 
 
@@ -110,6 +111,16 @@ def test_get_file_list_and_search(library_item, root):
     assert sorted(files) == sorted([root / 'song 10.txt', root / 'song 2.txt', root / 'Sub A' / 'a.txt',
                                     root / 'Sub A' / 'Deep' / 'deep.txt'])
     assert result == [[str(root / 'Sub A' / 'Deep' / 'deep.txt'), 'deep.txt']]
+
+
+def test_data_folder_is_not_listed(library_item, settings, root):
+    """OpenLP's own data folder inside the library is left out, so writing thumbnails does not reload the library"""
+    settings.setValue('advanced/data path', root / 'Sub B')
+
+    library_item.reload()
+
+    assert top_level_texts(library_item) == ['Sub A', 'song 2.txt', 'song 10.txt']
+    assert str(root / 'Sub B') not in library_item._watcher.directories()
 
 
 def test_portable_root_is_saved_relative(registry, settings, temp_folder):
@@ -240,6 +251,7 @@ def related_item(registry, settings, root):
     item = RelatedLibraryItem(None, make_plugin())
     item.initialise()
     yield item
+    item._watcher.blockSignals(True)
     item._reload_timer.stop()
 
 

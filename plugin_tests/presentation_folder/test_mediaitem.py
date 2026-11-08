@@ -32,7 +32,6 @@ from openlp.core.common.registry import Registry
 from openlp.core.display.screens import ScreenList
 from openlp.core.lib import ServiceItemContext
 from openlp.core.lib.serviceitem import ItemCapabilities, ServiceItem
-from openlp.core.ui.icons import UiIcons
 from openlp.plugins.presentation_folder.lib.mediaitem import PresentationFolderMediaItem
 from openlp.plugins.presentations.lib.pdfcontroller import PdfController
 from openlp.plugins.presentations.lib.presentationcontroller import PresentationDocument
@@ -123,6 +122,7 @@ def media_item(registry, settings, presentation_root, controllers, qapp):
     item = PresentationFolderMediaItem(None, plugin, controllers)
     item.initialise()
     yield item
+    item._watcher.blockSignals(True)
     item._reload_timer.stop()
     ActionList.shortcut_map = {}
 
@@ -193,7 +193,7 @@ def test_generate_slide_data_updates_the_library_icon(media_item, presentation_r
     media_item.generate_slide_data(ServiceItem(media_item.plugin), item=tree_item)
 
     assert find_item(media_item, file_path).icon(0).cacheKey() != icon_before
-    assert media_item._icons[file_path][1].cacheKey() != UiIcons().presentation.cacheKey()
+    assert media_item.icon_file_path(file_path).is_file()
 
 
 def test_generate_slide_data_for_pdf_in_service(media_item, presentation_root):
@@ -274,7 +274,7 @@ def test_delete_item_removes_thumbnails(media_item, presentation_root):
     media_item.delete_item(file_path)
 
     assert not thumbnail_folder.exists()
-    assert file_path not in media_item._icons
+    assert not media_item.icon_file_path(file_path).exists()
 
 
 def test_service_load_fixes_thumbnails(media_item):
@@ -311,3 +311,11 @@ def test_remote_signals_follow_plugin_name(media_item):
     """The remote API finds the signals by the name of the plugin"""
     assert hasattr(media_item, 'presentation_folder_go_live')
     assert hasattr(media_item, 'presentation_folder_add_to_service')
+
+
+def test_loading_the_library_opens_no_presentations(media_item):
+    """Reloading the library neither opens nor hashes the presentations, it only looks for icons made before"""
+    with patch.object(media_item.controllers['Fake'], 'add_document') as add_document:
+        media_item.reload()
+
+    add_document.assert_not_called()

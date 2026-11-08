@@ -16,15 +16,25 @@ Asennus asennusohjelmalla (Windows)
 -----------------------------------
 
 1. Sulje OpenLP.
-2. Käynnistä openlp-folder-plugins-<versio>-setup.exe ja seuraa ohjeita.
-   Asennus ei tarvitse järjestelmänvalvojan oikeuksia.
+2. Käynnistä openlp-folder-plugins-<versio>-setup.exe.
    Jos Windows näyttää varoituksen "Windows suojasi tietokonettasi", valitse
    "Lisätietoja" ja "Suorita silti". Varoitus tulee, koska asennusohjelmaa
    ei ole allekirjoitettu.
-3. Jatka kohdasta "Pluginien käyttöönotto".
+3. Valitse OpenLP:n kansio:
+     siirrettävä (portable) OpenLP:  kansio, jossa on OpenLPPortable.exe
+     asennettu OpenLP:               kansio, jossa on OpenLP.exe, yleensä
+                                     C:\Program Files\OpenLP
+   Pluginit asennetaan tämän OpenLP:n sisään, joten portable-OpenLP:n voi
+   siirtää tai kopioida muistitikulle pluginien kanssa. Program Filesissa
+   oleva OpenLP vaatii järjestelmänvalvojan oikeudet: valitse asennus
+   kaikille käyttäjille, kun asennusohjelma kysyy.
+4. Jatka kohdasta "Pluginien käyttöönotto".
+
+Jos päivität OpenLP:n korvaamalla sen kansion, aja asennusohjelma uudelleen.
 
 Pluginit poistetaan Windowsin asetuksista: Sovellukset > Asennetut sovellukset >
-"OpenLP:n kansiopluginit" > Poista.
+"OpenLP:n kansiopluginit" > Poista, tai ajamalla valitun OpenLP-kansion
+tiedosto folder-plugins-uninstall\unins000.exe.
 
 
 Asennus zip-paketista
@@ -43,8 +53,10 @@ Asennus zip-paketista
 
 Pluginit poistetaan poistamalla nämä viisi kansiota.
 
-Myös portable-OpenLP etsii pluginit yllä olevasta kansiosta, joten ne
-asennetaan Windowsin käyttäjäkohtaisesti, eivät muistitikulle.
+Windowsissa asennusohjelma on parempi: myös portable-OpenLP etsii pluginit
+yllä olevasta kansiosta, joten zip-paketista ne asentuvat Windowsin
+käyttäjälle eivätkä portable-kansion sisään. Älä asenna molemmilla tavoilla
+yhtä aikaa.
 
 
 Pluginien käyttöönotto
