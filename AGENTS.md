@@ -12,7 +12,8 @@ common with the fork. The history of the fork is on the `feature/filesystem-plug
   not changed, and it is not released from this repository.
 - The plugins run on both OpenLP 3.1 (PyQt5, Python 3.11 in the official build) and the coming OpenLP 4 (PySide6,
   upstream `master`). They are tested against both.
-- Users install the plugins into OpenLP's community plugin folder (below), with the exe installer or from the zip.
+- Users install the plugins with the exe installer inside the OpenLP they choose (below), or from the zip into
+  OpenLP's community plugin folder.
 - The code of the original plugins (`media`, `images`, `presentations`, `songs`) is reused by importing it, but it
   is not changed.
 
@@ -42,10 +43,15 @@ VERSION                  version of the plugins
   on Linux, `~/Library/Application Support/openlp/Data` on macOS. The folder is the same in portable mode and when
   the user has changed the data folder, because the core does not use `get_data_path()` for it.
 - Imports between the plugins are therefore relative (`from ...filesystem_library.libraryitem import ...`).
-  The same files work both as `contrib.plugins.*` (installed) and as `openlp.plugins.*` (in the tests).
+  The same files work both as `contrib.plugins.*` (zip) and as `openlp.plugins.*` (exe installer, tests).
   OpenLP's own modules are imported absolutely (`openlp.core...`, `openlp.plugins.songs...`).
-- The official Windows build (PyInstaller) has OpenLP's plugins as `.py` source in `App/OpenLP/plugins`, so the
-  modules of the original plugins can be imported in the frozen build too.
+- The official Windows build (PyInstaller 6) has OpenLP's own modules inside its archive. The `.py` files in
+  `App/OpenLP/plugins` are only found by the plugin manager's glob (`<AppDir>/plugins/*/*plugin.py`, imported as
+  `openlp.plugins.<name>.<file>`), they are not imported from there. Python finds `openlp.plugins.*` modules that
+  are not in the archive on disk in `_internal/openlp/plugins` (PyInstaller falls back to the file system). The
+  installer uses this: the code goes into `<AppDir>/_internal/openlp/plugins/` and a copy of each `*_plugin.py` into
+  `<AppDir>/plugins/<name>/`, so the plugins live inside the chosen OpenLP (tried with 3.1.7). The original
+  plugins can be imported in the frozen build too.
 - The new plugins are inactive by default (`<plugin>/status` = `PluginStatus.Inactive`). The user enables them in
   Settings > Manage Plugins.
 
@@ -94,7 +100,9 @@ files skipped).
 - The root folder is the setting `<plugin>/root folder`, chosen with "Choose folder" in the toolbar.
   In a portable OpenLP, a folder inside the portable folder is saved as a relative path.
 - A `QFileSystemWatcher` with a 500 ms debounce reloads the tree when something changes on disk.
-  Expanded folders and the selection are kept.
+  Expanded folders and the selection are kept. OpenLP's data folder (`AppLocation.get_data_path()`) is never listed
+  or watched, otherwise writing a thumbnail inside a library (for example a root of `Downloads` that contains the
+  portable OpenLP) would reload the library again and again.
 - Adding files (dialog or drag and drop) copies them into the selected folder. Nothing is overwritten.
 - Dragging inside the library moves files on disk. "Add folder" makes a real folder.
 - Deleting asks for confirmation and moves the files to the recycle bin (`QFile.moveToTrash`). `delete_item()` is
@@ -141,7 +149,8 @@ files skipped).
 - `ImageFolderTab` is the `ImageTab` of the `images` plugin, reading and writing the `image_folder/*` settings.
 - Thumbnails are in `<data>/image_folder/thumbnails`. The core looks for the plugin's thumbnails there when a
   service is opened from a file. There is no database, so a thumbnail is named by the sha256 of the image's *path*
-  (not its contents).
+  (not its contents). The tree is built with a placeholder icon, then `load_pending_icons()` loads or makes the
+  thumbnails from a 0 ms timer in 50 ms slices, so a big folder does not freeze OpenLP.
 - The selected images and folders (the images directly in a folder) become a single image item that can loop.
   With several selected, the title is the plugin's plural name.
 - Background replace/reset as in the `images` plugin. The icon is set by the plugin and restored with
@@ -165,9 +174,10 @@ files skipped).
   (`service_item.name = 'images'`). In the service it is a command item.
 - `populate_display_types` and `clean_up_thumbnails` are borrowed directly from `PresentationMediaItem`, because
   they do not use the database.
-- Loading the library does not open any presentations, because starting LibreOffice or PowerPoint for a whole
-  folder would be far too slow. A thumbnail appears once the presentation has been previewed, shown or added to the
-  service. Icons are cached by the file's modification time.
+- Loading the library does not open or hash any presentations, because starting LibreOffice or PowerPoint, or
+  reading every file for the controllers' content-hash thumbnail folders, would be far too slow for a whole folder.
+  When a presentation has been previewed, shown or added to the service, its first slide is saved as the library
+  icon `<data>/presentation_folder/icons/<sha256 of the path>.png`, which is used while it is newer than the file.
 - The original and the new presentation plugins must not be active at the same time: each starts its own
   controller processes.
 
@@ -356,6 +366,9 @@ QT_QPA_PLATFORM=offscreen .venv/Scripts/python -m pytest          # .venv/bin/py
 - Reading a song can add temporary tags to the global `FormattingTags.html_expands` list. `conftest.py` restores
   the list after each test.
 - When tests create real widgets, `ActionList.shortcut_map` must be cleared between tests.
+- Fixtures that create a library item block the signals of its `_watcher` and stop its timers when they finish.
+  Otherwise deleting the temporary folder fires the watcher, and a reload runs in a later test after the registry
+  is gone.
 - Use the same GPL license header in files as elsewhere in the code.
 
 ## Migration tool: `tools/migrate_database.py`
@@ -389,16 +402,20 @@ result is checked by reading the plan.
    `openlp-folder-plugins-<version>.zip` (plugins, `INSTALL.txt`, `ASENNUSOHJE.txt`, `LICENSE.txt`,
    `tools/migrate_database.py`) and
    `openlp-folder-plugins-<version>-setup.exe`, if Inno Setup is installed (`scoop install extras/inno-setup`).
-3. The installer installs without administrator rights into `{userappdata}\openlp\data\contrib\plugins`.
-   It first removes the folders of the old version and refuses to install if OpenLP is running (a WMI query, not
-   `tasklist | find`, because Git Bash's `find` comes first in PATH). The uninstaller is in
-   `contrib\folder-plugins-uninstall`, because OpenLP looks for plugins in the `plugins` folder. The installer asks
+3. The installer asks for the OpenLP folder (the portable folder with `App\OpenLP\OpenLP.exe`, or the folder of
+   `OpenLP.exe`, default `{commonpf64}\OpenLP`) and installs into it as described in "Installing and loading" above,
+   so a portable OpenLP can be moved with its plugins. It needs administrator rights only for Program Files
+   (`PrivilegesRequiredOverridesAllowed=dialog`; it checks that the folder can be written). It first removes the
+   folders of the old version, also an old installation in the community folder `{userappdata}\openlp\data\contrib`
+   (OpenLP would load both), and refuses to install if OpenLP is running (a WMI query, not `tasklist | find`, because
+   Git Bash's `find` comes first in PATH). The uninstaller is in `<OpenLP folder>\folder-plugins-uninstall`, because
+   OpenLP looks for plugins in the `plugins` folder. The installer asks
    for the language first (English or Finnish, the Windows language preselected). The language-dependent texts are
    in the `[CustomMessages]` section and the guide at the end is the `InfoAfterFile` value of the `[Languages]`
    lines. In a silent test, choose the language with `/LANG=en` or `/LANG=fi`.
-4. Silent test: `setup.exe /VERYSILENT /SUPPRESSMSGBOXES` and
-   `contrib\folder-plugins-uninstall\unins000.exe /VERYSILENT`. It installs into the real profile, so remove the
-   installation after the test.
+4. Silent test into a copy of the portable build: `setup.exe /VERYSILENT /SUPPRESSMSGBOXES /CURRENTUSER
+   /DIR=<portable copy>` and `<portable copy>\folder-plugins-uninstall\unins000.exe /VERYSILENT`. The installer
+   removes an old installation from the real profile's `contrib` folder, so back it up first if you need it.
 5. The installer is not signed, so Windows SmartScreen warns about it (the guide explains what to do).
 
 ## Known limitations

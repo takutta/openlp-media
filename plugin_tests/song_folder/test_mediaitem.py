@@ -80,6 +80,7 @@ def media_item(registry, settings, state, song_root, temp_folder):
         item = SongFolderMediaItem(None, plugin)
         item.initialise()
         yield item
+    item._watcher.blockSignals(True)
     item._reload_timer.stop()
     ActionList.shortcut_map = {}
 

@@ -16,14 +16,24 @@ Installing with the installer (Windows)
 ---------------------------------------
 
 1. Close OpenLP.
-2. Run openlp-folder-plugins-<version>-setup.exe and follow the steps.
-   The installer needs no administrator rights.
+2. Run openlp-folder-plugins-<version>-setup.exe.
    If Windows shows "Windows protected your PC", choose "More info" and
    "Run anyway". The warning appears because the installer is not signed.
-3. Continue from "Enabling the plugins".
+3. Choose the folder of OpenLP:
+     portable OpenLP:   the folder with OpenLPPortable.exe
+     installed OpenLP:  the folder with OpenLP.exe, usually
+                        C:\Program Files\OpenLP
+   The plugins are installed inside that OpenLP, so a portable OpenLP can be
+   moved or copied to a USB stick with the plugins. An OpenLP in Program Files
+   needs administrator rights: choose "Install for all users" when the
+   installer asks.
+4. Continue from "Enabling the plugins".
+
+If you update OpenLP by replacing its folder, run the installer again.
 
 To uninstall, open Windows Settings: Apps > Installed apps >
-"OpenLP Folder Plugins" > Uninstall.
+"OpenLP Folder Plugins" > Uninstall, or run
+folder-plugins-uninstall\unins000.exe in the OpenLP folder you chose.
 
 
 Installing from the zip
@@ -42,8 +52,9 @@ Installing from the zip
 
 To uninstall, delete these five folders.
 
-Portable OpenLP also looks for plugins in the folder above, so they are
-installed for the Windows user, not on the USB stick.
+On Windows, the installer is better: portable OpenLP also looks for plugins
+in the folder above, so from the zip they are installed for the Windows user,
+not inside the portable folder. Don't install both ways at the same time.
 
 
 Enabling the plugins

@@ -21,14 +21,17 @@
 """
 The media manager item of the Presentation Folder plugin
 """
+import hashlib
 import logging
 import os
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 
+from openlp.core.common import delete_file
 from openlp.core.common.applocation import AppLocation
 from openlp.core.common.i18n import translate
+from openlp.core.common.path import create_paths
 from openlp.core.common.registry import Registry
 from openlp.core.lib import ServiceItemContext, build_icon, create_thumb, validate_thumb
 from openlp.core.lib.serviceitem import ItemCapabilities
@@ -70,8 +73,6 @@ class PresentationFolderMediaItem(FileSystemLibraryItem):
         self.controllers = controllers
         self.on_new_file_masks = ''
         self.suffixes = set()
-        # Library icons by file path, with the modification time of the file they were made for
-        self._icons: Dict[Path, Tuple[float, QtGui.QIcon]] = {}
         super().__init__(parent, plugin)
 
     def retranslate_ui(self):
@@ -156,48 +157,53 @@ class PresentationFolderMediaItem(FileSystemLibraryItem):
         """
         return file_path.suffix.lower() in self.suffixes
 
-    def _get_icon(self, file_path: Path) -> QtGui.QIcon:
+    def icon_file_path(self, file_path: Path) -> Path:
         """
-        Return the icon for a presentation in the library: a thumbnail of the first slide when the presentation has
-        been shown before, the presentation icon otherwise. Opening presentations to make thumbnails would be too slow
-        for a whole folder, so it is only done when a presentation is used.
+        The library icon of a presentation, named by the sha256 of its path like the thumbnails of Image Folder. The
+        thumbnail folder of the controllers is named by the hash of the file's contents, and hashing every presentation
+        whenever the library loads would be far too slow.
 
         :param file_path: The presentation
         """
+        name = hashlib.sha256(str(file_path).encode('utf-8')).hexdigest()
+        return AppLocation.get_section_data_path(self.settings_section) / 'icons' / (name + '.png')
+
+    def _get_icon(self, file_path: Path) -> QtGui.QIcon:
+        """
+        Return the icon for a presentation in the library: a thumbnail of the first slide when the presentation has
+        been used before, the presentation icon otherwise. Nothing is opened or hashed here.
+
+        :param file_path: The presentation
+        """
+        icon_path = self.icon_file_path(file_path)
         try:
-            modified = file_path.stat().st_mtime
+            if validate_thumb(file_path, icon_path):
+                return build_icon(icon_path)
         except OSError:
             return UiIcons().delete
-        cached = self._icons.get(file_path)
-        if cached and cached[0] == modified:
-            return cached[1]
-        icon = UiIcons().presentation
+        return UiIcons().presentation
+
+    def _update_icon(self, file_path: Path):
+        """
+        Make the library icon of a presentation which was just opened, and show it
+
+        :param file_path: The presentation
+        """
         controller_name = self.find_controller_by_type(file_path)
         if controller_name:
             doc = self.controllers[controller_name].add_document(file_path)
             preview_path = doc.get_thumbnail_path(1, True)
             if preview_path:
-                thumbnail_path = doc.get_thumbnail_folder() / 'icon.png'
-                if validate_thumb(preview_path, thumbnail_path):
-                    icon = build_icon(thumbnail_path)
-                else:
-                    icon = create_thumb(preview_path, thumbnail_path)
+                icon_path = self.icon_file_path(file_path)
+                create_paths(icon_path.parent)
+                create_thumb(preview_path, icon_path, return_icon=False)
             doc.close_presentation()
-        self._icons[file_path] = (modified, icon)
-        return icon
-
-    def _update_icon(self, file_path: Path):
-        """
-        Show the new thumbnail of a presentation which was just opened
-
-        :param file_path: The presentation
-        """
-        self._icons.pop(file_path, None)
+        icon = self._get_icon(file_path)
         iterator = QtWidgets.QTreeWidgetItemIterator(self.list_view)
         while iterator.value():
             tree_item = iterator.value()
             if tree_item.data(0, QtCore.Qt.ItemDataRole.UserRole) == file_path:
-                tree_item.setIcon(0, self._get_icon(file_path))
+                tree_item.setIcon(0, icon)
             iterator += 1
 
     def load_item(self, file_path: Path) -> QtWidgets.QTreeWidgetItem:
@@ -217,7 +223,7 @@ class PresentationFolderMediaItem(FileSystemLibraryItem):
 
         :param file_path: The presentation that is being removed
         """
-        self._icons.pop(file_path, None)
+        delete_file(self.icon_file_path(file_path))
         self.clean_up_thumbnails(file_path)
 
     def _show_error(self, remote: bool, message: str, file_path: Path):

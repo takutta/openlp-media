@@ -23,6 +23,8 @@ The media manager item of the Image Folder plugin
 """
 import hashlib
 import logging
+import time
+from collections import deque
 from pathlib import Path
 from typing import List, Optional
 
@@ -57,6 +59,12 @@ class ImageFolderMediaItem(FileSystemLibraryItem):
         self.icon_path = 'images/image'
         self.image_suffixes = {'.' + bytes(image_format).decode().lower()
                                for image_format in QtGui.QImageReader.supportedImageFormats()}
+        # The icons are loaded and the thumbnails made a few at a time after the tree has been built, so that a big
+        # library does not freeze OpenLP
+        self._pending_icons = deque()
+        self._icon_timer = QtCore.QTimer()
+        self._icon_timer.setInterval(0)
+        self._icon_timer.timeout.connect(self.load_pending_icons)
         super().__init__(parent, plugin)
 
     @property
@@ -152,23 +160,49 @@ class ImageFolderMediaItem(FileSystemLibraryItem):
 
     def load_item(self, file_path: Path) -> QtWidgets.QTreeWidgetItem:
         """
-        Create the tree item for an image, with a thumbnail as the icon
+        Create the tree item for an image. Its thumbnail is set later by :meth:`load_pending_icons`.
 
         :param file_path: The image to create the item for
         """
-        thumbnail_path = self.generate_thumbnail_path(file_path)
-        if validate_thumb(file_path, thumbnail_path):
-            icon = build_icon(thumbnail_path)
-        else:
-            size: Optional[QtCore.QSize] = None
-            slide_height: Optional[int] = self.settings.value('advanced/slide max height')
-            if slide_height and slide_height > 0:
-                size = QtCore.QSize(-1, slide_height)
-            icon = create_thumb(file_path, thumbnail_path, size=size)
         tree_item = QtWidgets.QTreeWidgetItem([file_path.name])
-        tree_item.setIcon(0, icon)
+        tree_item.setIcon(0, UiIcons().picture)
         tree_item.setToolTip(0, str(file_path))
+        self._pending_icons.append((file_path, tree_item))
         return tree_item
+
+    def reload(self, select_paths: Optional[List[Path]] = None):
+        """
+        Reload the library. The items of the old tree are gone, so their icons are not loaded any more.
+        """
+        self._pending_icons.clear()
+        super().reload(select_paths)
+        if self._pending_icons:
+            self._icon_timer.start()
+
+    def load_pending_icons(self, budget: float = 0.05):
+        """
+        Set the thumbnails of the items waiting for one, making the thumbnails that are missing or out of date, until
+        the time budget (in seconds) runs out. The timer calls this again until no items are left.
+        """
+        # ponytail: runs in the GUI thread, so one huge image can still stall it briefly; a QThreadPool worker if so
+        deadline = time.monotonic() + budget
+        while self._pending_icons and time.monotonic() < deadline:
+            file_path, tree_item = self._pending_icons.popleft()
+            thumbnail_path = self.generate_thumbnail_path(file_path)
+            try:
+                if validate_thumb(file_path, thumbnail_path):
+                    icon = build_icon(thumbnail_path)
+                else:
+                    size: Optional[QtCore.QSize] = None
+                    slide_height: Optional[int] = self.settings.value('advanced/slide max height')
+                    if slide_height and slide_height > 0:
+                        size = QtCore.QSize(-1, slide_height)
+                    icon = create_thumb(file_path, thumbnail_path, size=size)
+            except OSError:
+                continue
+            tree_item.setIcon(0, icon)
+        if not self._pending_icons:
+            self._icon_timer.stop()
 
     def delete_item(self, file_path: Path):
         """

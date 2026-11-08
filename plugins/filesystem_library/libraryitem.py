@@ -362,6 +362,9 @@ class FileSystemLibraryItem(MediaManagerItem):
         self.list_view.blockSignals(True)
         self.list_view.clear()
         self._file_paths = []
+        # OpenLP's data folder (thumbnails, caches) is never listed: writing a thumbnail into a library folder would
+        # reload the library again and again
+        self._data_path = AppLocation.get_data_path()
         root_path = self.root_path
         if root_path:
             self._watcher.addPath(str(root_path))
@@ -392,6 +395,8 @@ class FileSystemLibraryItem(MediaManagerItem):
                        key=lambda entry: get_natural_key(entry.name))
         for entry in sub_folders:
             path = Path(entry.path)
+            if path == self._data_path:
+                continue
             self._watcher.addPath(str(path))
             folder_item = QtWidgets.QTreeWidgetItem([entry.name])
             folder_item.setIcon(0, UiIcons().folder)
