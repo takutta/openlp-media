@@ -1,5 +1,5 @@
 ; Installer of the folder plugins for Windows, made by tools/build.py with Inno Setup:
-;     ISCC /DAppVersion=1.0.0 /DStageDir=<staged files> /DOutputDir=<dist> tools/installer.iss
+;     ISCC /DAppVersion=0.0.1 /DStageDir=<staged files> /DOutputDir=<dist> tools/installer.iss
 ; The plugins are copied to the folder where OpenLP looks for community plugins. No administrator rights are needed.
 
 [Setup]
